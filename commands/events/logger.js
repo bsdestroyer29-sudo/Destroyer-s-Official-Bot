@@ -12,7 +12,7 @@ export default {
   execute(client) {
 
     // =================================================
-    // COMMAND LOGGING
+    // SLASH COMMAND LOG
     // =================================================
     client.on("interactionCreate", async interaction => {
       if (!interaction.isChatInputCommand()) return;
@@ -34,7 +34,31 @@ export default {
     });
 
     // =================================================
-    // MESSAGE DELETE (WHO DELETED)
+    // MESSAGE EDIT
+    // =================================================
+    client.on("messageUpdate", async (oldMsg, newMsg) => {
+      if (!oldMsg.guild || oldMsg.author?.bot) return;
+      if (oldMsg.content === newMsg.content) return;
+
+      const logChannel = getLogChannel(client);
+      if (!logChannel) return;
+
+      const embed = new EmbedBuilder()
+        .setColor("Orange")
+        .setTitle("✏️ Message Edited")
+        .addFields(
+          { name: "User", value: `${oldMsg.author.tag}` },
+          { name: "Channel", value: `<#${oldMsg.channel.id}>` },
+          { name: "Before", value: oldMsg.content || "None" },
+          { name: "After", value: newMsg.content || "None" }
+        )
+        .setTimestamp();
+
+      logChannel.send({ embeds: [embed] });
+    });
+
+    // =================================================
+    // MESSAGE DELETE (WITH EXECUTOR)
     // =================================================
     client.on("messageDelete", async message => {
       if (!message.guild || message.author?.bot) return;
@@ -42,20 +66,27 @@ export default {
       const logChannel = getLogChannel(client);
       if (!logChannel) return;
 
-      const fetchedLogs = await message.guild.fetchAuditLogs({
-        limit: 1,
-        type: AuditLogEvent.MessageDelete
-      });
+      let executor = "Unknown";
 
-      const deletionLog = fetchedLogs.entries.first();
-      const executor = deletionLog?.executor;
+      try {
+        const logs = await message.guild.fetchAuditLogs({
+          limit: 1,
+          type: AuditLogEvent.MessageDelete
+        });
+
+        const entry = logs.entries.first();
+        if (entry && entry.target.id === message.author.id) {
+          executor = entry.executor.tag;
+        }
+      } catch {}
 
       const embed = new EmbedBuilder()
         .setColor("Red")
         .setTitle("🗑 Message Deleted")
         .addFields(
-          { name: "Author", value: `${message.author?.tag}` },
-          { name: "Deleted By", value: executor ? `${executor.tag}` : "Unknown" },
+          { name: "Author", value: `${message.author.tag}` },
+          { name: "Deleted By", value: executor },
+          { name: "Channel", value: `<#${message.channel.id}>` },
           { name: "Content", value: message.content || "None" }
         )
         .setTimestamp();
@@ -64,70 +95,101 @@ export default {
     });
 
     // =================================================
-    // ROLE ADD / REMOVE (WHO DID IT)
+    // ROLE / NICKNAME / TIMEOUT UPDATE
     // =================================================
     client.on("guildMemberUpdate", async (oldMember, newMember) => {
       const logChannel = getLogChannel(client);
       if (!logChannel) return;
 
-      const fetchedLogs = await newMember.guild.fetchAuditLogs({
-        limit: 1,
-        type: AuditLogEvent.MemberRoleUpdate
-      });
+      // ROLE CHANGES
+      const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
+      const removed = oldMember.roles.cache.filter(r => !newMember.roles.cache.has(r.id));
 
-      const roleLog = fetchedLogs.entries.first();
-      const executor = roleLog?.executor;
+      if (added.size || removed.size) {
+        let executor = "Unknown";
 
-      const oldRoles = oldMember.roles.cache;
-      const newRoles = newMember.roles.cache;
+        try {
+          const logs = await newMember.guild.fetchAuditLogs({
+            limit: 1,
+            type: AuditLogEvent.MemberRoleUpdate
+          });
+          executor = logs.entries.first()?.executor?.tag || "Unknown";
+        } catch {}
 
-      const added = newRoles.filter(r => !oldRoles.has(r.id));
-      const removed = oldRoles.filter(r => !newRoles.has(r.id));
+        const embed = new EmbedBuilder()
+          .setColor("Purple")
+          .setTitle("🎭 Role Update")
+          .addFields(
+            { name: "User", value: newMember.user.tag },
+            { name: "Added", value: added.map(r => r.name).join(", ") || "None" },
+            { name: "Removed", value: removed.map(r => r.name).join(", ") || "None" },
+            { name: "Changed By", value: executor }
+          )
+          .setTimestamp();
 
-      if (!added.size && !removed.size) return;
+        logChannel.send({ embeds: [embed] });
+      }
 
-      const embed = new EmbedBuilder()
-        .setColor("Purple")
-        .setTitle("🎭 Role Update")
-        .addFields(
-          { name: "User", value: `${newMember.user.tag}` },
-          { name: "Added", value: added.map(r => r.name).join(", ") || "None" },
-          { name: "Removed", value: removed.map(r => r.name).join(", ") || "None" },
-          { name: "Changed By", value: executor ? executor.tag : "Unknown" }
-        )
-        .setTimestamp();
+      // NICKNAME CHANGE
+      if (oldMember.nickname !== newMember.nickname) {
+        const embed = new EmbedBuilder()
+          .setColor("Yellow")
+          .setTitle("📝 Nickname Changed")
+          .addFields(
+            { name: "User", value: newMember.user.tag },
+            { name: "Before", value: oldMember.nickname || "None" },
+            { name: "After", value: newMember.nickname || "None" }
+          )
+          .setTimestamp();
 
-      logChannel.send({ embeds: [embed] });
+        logChannel.send({ embeds: [embed] });
+      }
+
+      // TIMEOUT CHANGE
+      if (oldMember.communicationDisabledUntil !== newMember.communicationDisabledUntil) {
+        const embed = new EmbedBuilder()
+          .setColor("DarkOrange")
+          .setTitle("⏳ Timeout Updated")
+          .addFields(
+            { name: "User", value: newMember.user.tag },
+            { name: "Until", value: newMember.communicationDisabledUntil?.toString() || "Removed" }
+          )
+          .setTimestamp();
+
+        logChannel.send({ embeds: [embed] });
+      }
     });
 
     // =================================================
-    // MEMBER KICK
+    // MEMBER JOIN
+    // =================================================
+    client.on("guildMemberAdd", member => {
+      const logChannel = getLogChannel(client);
+      if (!logChannel) return;
+
+      logChannel.send(`➕ Member Joined: ${member.user.tag}`);
+    });
+
+    // =================================================
+    // MEMBER LEAVE / KICK
     // =================================================
     client.on("guildMemberRemove", async member => {
       const logChannel = getLogChannel(client);
       if (!logChannel) return;
 
-      const fetchedLogs = await member.guild.fetchAuditLogs({
-        limit: 1,
-        type: AuditLogEvent.MemberKick
-      });
+      try {
+        const logs = await member.guild.fetchAuditLogs({
+          limit: 1,
+          type: AuditLogEvent.MemberKick
+        });
 
-      const kickLog = fetchedLogs.entries.first();
+        const entry = logs.entries.first();
 
-      if (kickLog && kickLog.target.id === member.id) {
-        const embed = new EmbedBuilder()
-          .setColor("DarkRed")
-          .setTitle("👢 Member Kicked")
-          .addFields(
-            { name: "User", value: member.user.tag },
-            { name: "Kicked By", value: kickLog.executor.tag }
-          )
-          .setTimestamp();
+        if (entry && entry.target.id === member.id) {
+          return logChannel.send(`👢 ${member.user.tag} was kicked by ${entry.executor.tag}`);
+        }
+      } catch {}
 
-        return logChannel.send({ embeds: [embed] });
-      }
-
-      // If not kick → normal leave
       logChannel.send(`➖ Member Left: ${member.user.tag}`);
     });
 
@@ -138,75 +200,34 @@ export default {
       const logChannel = getLogChannel(client);
       if (!logChannel) return;
 
-      const fetchedLogs = await ban.guild.fetchAuditLogs({
-        limit: 1,
-        type: AuditLogEvent.MemberBanAdd
-      });
+      let executor = "Unknown";
 
-      const banLog = fetchedLogs.entries.first();
+      try {
+        const logs = await ban.guild.fetchAuditLogs({
+          limit: 1,
+          type: AuditLogEvent.MemberBanAdd
+        });
+        executor = logs.entries.first()?.executor?.tag || "Unknown";
+      } catch {}
 
-      const embed = new EmbedBuilder()
-        .setColor("Black")
-        .setTitle("🔨 Member Banned")
-        .addFields(
-          { name: "User", value: ban.user.tag },
-          { name: "Banned By", value: banLog?.executor?.tag || "Unknown" }
-        )
-        .setTimestamp();
-
-      logChannel.send({ embeds: [embed] });
+      logChannel.send(`🔨 ${ban.user.tag} was banned by ${executor}`);
     });
 
     // =================================================
-    // CHANNEL CREATE
+    // CHANNEL CREATE / DELETE
     // =================================================
-    client.on("channelCreate", async channel => {
+    client.on("channelCreate", channel => {
       const logChannel = getLogChannel(client);
       if (!logChannel) return;
 
-      const fetchedLogs = await channel.guild.fetchAuditLogs({
-        limit: 1,
-        type: AuditLogEvent.ChannelCreate
-      });
-
-      const createLog = fetchedLogs.entries.first();
-
-      const embed = new EmbedBuilder()
-        .setColor("Green")
-        .setTitle("📁 Channel Created")
-        .addFields(
-          { name: "Channel", value: channel.name },
-          { name: "Created By", value: createLog?.executor?.tag || "Unknown" }
-        )
-        .setTimestamp();
-
-      logChannel.send({ embeds: [embed] });
+      logChannel.send(`📁 Channel Created: ${channel.name}`);
     });
 
-    // =================================================
-    // CHANNEL DELETE
-    // =================================================
-    client.on("channelDelete", async channel => {
+    client.on("channelDelete", channel => {
       const logChannel = getLogChannel(client);
       if (!logChannel) return;
 
-      const fetchedLogs = await channel.guild.fetchAuditLogs({
-        limit: 1,
-        type: AuditLogEvent.ChannelDelete
-      });
-
-      const deleteLog = fetchedLogs.entries.first();
-
-      const embed = new EmbedBuilder()
-        .setColor("Red")
-        .setTitle("🗑 Channel Deleted")
-        .addFields(
-          { name: "Channel", value: channel.name },
-          { name: "Deleted By", value: deleteLog?.executor?.tag || "Unknown" }
-        )
-        .setTimestamp();
-
-      logChannel.send({ embeds: [embed] });
+      logChannel.send(`🗑 Channel Deleted: ${channel.name}`);
     });
 
   }
