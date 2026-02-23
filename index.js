@@ -22,9 +22,13 @@ if (!TOKEN || !CLIENT_ID || !GUILD_ID || !MONGO_URI) {
   process.exit(1);
 }
 
-// ===== CLIENT =====
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
 });
 
 client.commands = new Collection();
