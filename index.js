@@ -29,19 +29,30 @@ const client = new Client({
 
 client.commands = new Collection();
 
-// ===== LOAD COMMANDS =====
+// ===== LOAD COMMANDS (WITH SUBFOLDERS SUPPORT) =====
 const commands = [];
 const commandsPath = path.join(__dirname, "commands");
 
-if (fs.existsSync(commandsPath)) {
-  const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith(".js"));
+async function loadCommands(dir) {
+  const files = fs.readdirSync(dir);
 
-  for (const file of commandFiles) {
-    const filePath = path.join(commandsPath, file);
-    const command = (await import(`file://${filePath}`)).default;
+  for (const file of files) {
+    const filePath = path.join(dir, file);
+    const stat = fs.lstatSync(filePath);
 
-    client.commands.set(command.data.name, command);
-    commands.push(command.data.toJSON());
+    if (stat.isDirectory()) {
+      await loadCommands(filePath);
+    } else if (file.endsWith(".js")) {
+      const command = (await import(`file://${filePath}`)).default;
+
+      if (!command?.data?.name) {
+        console.warn(`⚠️ Skipping invalid command file: ${file}`);
+        continue;
+      }
+
+      client.commands.set(command.data.name, command);
+      commands.push(command.data.toJSON());
+    }
   }
 }
 
@@ -107,6 +118,7 @@ client.on("interactionCreate", async interaction => {
 // ===== STARTUP SEQUENCE =====
 (async () => {
   await connectMongo();
+  await loadCommands(commandsPath);
   await registerCommands();
   await client.login(TOKEN);
 })();
