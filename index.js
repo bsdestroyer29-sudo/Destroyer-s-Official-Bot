@@ -7,11 +7,11 @@ import { fileURLToPath } from "url";
 
 dotenv.config();
 
-// ===== PATH FIX FOR ES MODULES =====
+// ===== PATH FIX =====
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ===== ENV VARIABLES =====
+// ===== ENV =====
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
@@ -22,6 +22,7 @@ if (!TOKEN || !CLIENT_ID || !GUILD_ID || !MONGO_URI) {
   process.exit(1);
 }
 
+// ===== CLIENT WITH FULL LOGGING INTENTS =====
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -33,7 +34,9 @@ const client = new Client({
 
 client.commands = new Collection();
 
-// ===== LOAD COMMANDS (WITH SUBFOLDERS SUPPORT) =====
+// =================================================
+// LOAD COMMANDS (WITH SUBFOLDERS)
+// =================================================
 const commands = [];
 const commandsPath = path.join(__dirname, "commands");
 
@@ -60,7 +63,31 @@ async function loadCommands(dir) {
   }
 }
 
-// ===== REGISTER SLASH COMMANDS =====
+// =================================================
+// LOAD EVENTS
+// =================================================
+const eventsPath = path.join(__dirname, "events");
+
+async function loadEvents() {
+  if (!fs.existsSync(eventsPath)) return;
+
+  const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith(".js"));
+
+  for (const file of eventFiles) {
+    const filePath = path.join(eventsPath, file);
+    const event = (await import(`file://${filePath}`)).default;
+
+    if (event.once) {
+      client.once(event.name, (...args) => event.execute(...args, client));
+    } else {
+      client.on(event.name, (...args) => event.execute(...args, client));
+    }
+  }
+}
+
+// =================================================
+// REGISTER SLASH COMMANDS (GUILD)
+// =================================================
 async function registerCommands() {
   const rest = new REST({ version: "10" }).setToken(TOKEN);
 
@@ -78,7 +105,9 @@ async function registerCommands() {
   }
 }
 
-// ===== CONNECT TO MONGODB =====
+// =================================================
+// CONNECT MONGO
+// =================================================
 async function connectMongo() {
   try {
     await mongoose.connect(MONGO_URI);
@@ -89,11 +118,9 @@ async function connectMongo() {
   }
 }
 
-// ===== EVENTS =====
-client.once("ready", () => {
-  console.log(`🤖 Logged in as ${client.user.tag}`);
-});
-
+// =================================================
+// INTERACTION HANDLER
+// =================================================
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -119,10 +146,20 @@ client.on("interactionCreate", async interaction => {
   }
 });
 
-// ===== STARTUP SEQUENCE =====
+// =================================================
+// READY
+// =================================================
+client.once("ready", () => {
+  console.log(`🤖 Logged in as ${client.user.tag}`);
+});
+
+// =================================================
+// STARTUP SEQUENCE
+// =================================================
 (async () => {
   await connectMongo();
   await loadCommands(commandsPath);
+  await loadEvents();
   await registerCommands();
   await client.login(TOKEN);
 })();
