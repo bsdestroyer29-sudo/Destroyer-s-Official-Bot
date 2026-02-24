@@ -16,44 +16,37 @@ export default {
 
   async execute(interaction, client) {
 
-    // =================================================
-    // ENTRY BUTTON
-    // =================================================
-    if (interaction.isButton() && interaction.customId === "application_entry") {
+    if (!interaction.isButton()) return;
+
+    // ENTRY
+    if (interaction.customId === "application_entry") {
 
       const config = await ApplicationConfig.findOne({
         guildId: interaction.guild.id
       });
 
       if (!config)
-        return interaction.reply({ content: "❌ Application not configured.", ephemeral: true });
+        return interaction.reply({ content: "Not configured.", ephemeral: true });
 
-      // 🔒 If closed
       if (!config.isOpen) {
         await interaction.reply({ content: "📩 Check your DMs.", ephemeral: true });
-
         return interaction.user.send(
-          "❌ Sorry, this application is closed. Wait for it to be opened again."
+          "❌ Sorry, this application is closed, wait for it to be opened again."
         ).catch(() => {});
       }
 
-      // Prevent double applications
       const existing = await ApplicationSession.findOne({
         userId: interaction.user.id,
         completed: false
       });
 
-      if (existing) {
+      if (existing)
         return interaction.reply({
           content: "❌ You already have an active application.",
           ephemeral: true
         });
-      }
 
-      await interaction.reply({
-        content: "📩 Check your DMs to start the application.",
-        ephemeral: true
-      });
+      await interaction.reply({ content: "📩 Check your DMs.", ephemeral: true });
 
       const session = await ApplicationSession.create({
         guildId: interaction.guild.id,
@@ -63,35 +56,27 @@ export default {
         completed: false
       });
 
-      await interaction.user.send(
-        `📝 **Application Started**\n\nQuestion 1:\n${config.questions[0]}`
+      return interaction.user.send(
+        `📝 Application Started\n\nQuestion 1:\n${config.questions[0]}`
       );
-
-      return;
     }
 
-    // =================================================
-    // SUBMIT BUTTON
-    // =================================================
-    if (interaction.isButton() && interaction.customId.startsWith("app_submit_")) {
+    // SUBMIT
+    if (interaction.customId.startsWith("app_submit_")) {
 
       const sessionId = interaction.customId.split("_")[2];
       const session = await ApplicationSession.findById(sessionId);
       if (!session) return;
 
       const reviewChannel = client.channels.cache.get(APPLICATION_REVIEW_CHANNEL_ID);
-      if (!reviewChannel)
-        return interaction.reply({ content: "❌ Review channel not found.", ephemeral: true });
 
       const embed = new EmbedBuilder()
         .setColor("Purple")
         .setTitle("📄 New Application")
         .setDescription(
-          session.answers
-            .map((a, i) =>
-              `**Q${i + 1}:** ${a.question}\n**A:** ${a.answer}\n`
-            )
-            .join("\n")
+          session.answers.map((a, i) =>
+            `**Q${i + 1}:** ${a.question}\n**A:** ${a.answer}\n`
+          ).join("\n")
         )
         .addFields({ name: "Applicant", value: `<@${session.userId}>` })
         .setTimestamp();
@@ -112,44 +97,32 @@ export default {
       session.completed = true;
       await session.save();
 
-      return interaction.reply({
-        content: "✅ Application submitted successfully.",
-        ephemeral: true
-      });
+      return interaction.reply({ content: "Application submitted.", ephemeral: true });
     }
 
-    // =================================================
     // ACCEPT / DECLINE
-    // =================================================
-    if (interaction.isButton() && interaction.customId.startsWith("app_")) {
+    if (interaction.customId.startsWith("app_accept_") || interaction.customId.startsWith("app_decline_")) {
 
-      const parts = interaction.customId.split("_");
-      const action = parts[1];
-      const sessionId = parts[2];
-
-      if (!["accept", "decline"].includes(action)) return;
+      const action = interaction.customId.includes("accept") ? "accept" : "decline";
+      const sessionId = interaction.customId.split("_")[2];
 
       const session = await ApplicationSession.findById(sessionId);
       if (!session) return;
 
-      const applicant = await client.users.fetch(session.userId).catch(() => null);
-      if (!applicant) return;
+      const user = await client.users.fetch(session.userId).catch(() => null);
+      if (!user) return;
 
-      const decision = action === "accept" ? "accepted" : "declined";
-
-      await applicant.send(
+      await user.send(
         action === "accept"
           ? "🎉 Your application has been accepted!"
           : "❌ Your application has been declined."
       ).catch(() => {});
 
       await interaction.update({
-        content: `Application ${decision} by ${interaction.user.tag}`,
+        content: `Application ${action}ed by ${interaction.user.tag}`,
         embeds: interaction.message.embeds,
         components: []
       });
-
-      return;
     }
   }
 };
