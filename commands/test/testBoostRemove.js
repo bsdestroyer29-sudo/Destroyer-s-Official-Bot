@@ -8,17 +8,25 @@ const BOOST_CHANNEL_ID = "1475950368071487659";
 
 export default {
   data: new SlashCommandBuilder()
-    .setName("testboost remove")
-    .setDescription("Simulate boost removal")
+    .setName("testboost")
+    .setDescription("Test boost system")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    .addUserOption(option =>
-      option
-        .setName("user")
-        .setDescription("User to simulate boost removal")
-        .setRequired(true)
+
+    .addSubcommand(sub =>
+      sub
+        .setName("remove")
+        .setDescription("Simulate boost removal")
+        .addUserOption(option =>
+          option
+            .setName("user")
+            .setDescription("User to simulate boost removal")
+            .setRequired(true)
+        )
     ),
 
   async execute(interaction) {
+
+    if (interaction.options.getSubcommand() !== "remove") return;
 
     const user = interaction.options.getUser("user");
 
