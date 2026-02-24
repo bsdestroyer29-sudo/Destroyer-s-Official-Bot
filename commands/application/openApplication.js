@@ -14,14 +14,23 @@ export default {
 
   async execute(interaction) {
 
-    await ApplicationConfig.findOneAndUpdate(
-      { guildId: interaction.guild.id },
-      { isOpen: true }
-    );
+    try {
+      await interaction.deferReply({ ephemeral: true });
 
-    return interaction.reply({
-      content: "🟢 Applications are now OPEN.",
-      ephemeral: true
-    });
+      await ApplicationConfig.findOneAndUpdate(
+        { guildId: interaction.guild.id },
+        { isOpen: true }
+      );
+
+      return interaction.editReply({
+        content: "🟢 Applications are now OPEN."
+      });
+
+    } catch (err) {
+      console.error(err);
+      return interaction.editReply({
+        content: "❌ Error opening applications."
+      });
+    }
   }
 };
