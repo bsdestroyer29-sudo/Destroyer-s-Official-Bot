@@ -7,14 +7,18 @@ export default {
 
   async execute(interaction) {
 
+    // 🔥 Your real role IDs
     const STAFF_ROLES = [
-      "1461793438084239492",
-      "1471225745912103045",
-      "1461793436675080295",
-      "1461793435236307260",
-      "1461793435018199206",
-      "1461793004825083935"
+      "OWNER_ROLE_ID",
+      "COOWNER_ROLE_ID",
+      "ADMIN_ROLE_ID",
+      "MODERATOR_ROLE_ID",
+      "SUPPORT_HELPER_ROLE_ID",
+      "HELPER_ROLE_ID"
     ];
+
+    // 🚨 Force fetch all members (important fix)
+    await interaction.guild.members.fetch();
 
     const embed = new EmbedBuilder()
       .setColor("#5865F2")
@@ -22,6 +26,7 @@ export default {
       .setDescription("The team that keeps the server running smoothly.")
       .setTimestamp();
 
+    const listedMembers = new Set();
     let totalStaff = 0;
 
     for (const roleId of STAFF_ROLES) {
@@ -29,19 +34,22 @@ export default {
       if (!role) continue;
 
       const members = role.members
-        .map(member => `<@${member.id}>`)
-        .join("\n");
+        .filter(member => !listedMembers.has(member.id))
+        .map(member => {
+          listedMembers.add(member.id);
+          return `<@${member.id}>`;
+        });
 
-      totalStaff += role.members.size;
+      totalStaff += members.length;
 
       embed.addFields({
-        name: `${role.name} (${role.members.size})`,
-        value: members || "No members",
+        name: `${role.name} (${members.length})`,
+        value: members.length ? members.join("\n") : "No members",
         inline: false
       });
     }
 
-    embed.setFooter({ text: `Total Staff: ${totalStaff}` });
+    embed.setFooter({ text: `Total Unique Staff: ${totalStaff}` });
 
     await interaction.reply({ embeds: [embed] });
   }
