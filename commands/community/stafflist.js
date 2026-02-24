@@ -7,7 +7,8 @@ export default {
 
   async execute(interaction) {
 
-    // 🔥 Your real role IDs
+    await interaction.deferReply(); // 🔥 important fix
+
     const STAFF_ROLES = [
       "1461793438084239492",
       "1471225745912103045",
@@ -17,7 +18,7 @@ export default {
       "1461793004825083935"
     ];
 
-    // 🚨 Force fetch all members (important fix)
+    // Fetch members safely
     await interaction.guild.members.fetch();
 
     const embed = new EmbedBuilder()
@@ -51,6 +52,6 @@ export default {
 
     embed.setFooter({ text: `Total Unique Staff: ${totalStaff}` });
 
-    await interaction.reply({ embeds: [embed] });
+    await interaction.editReply({ embeds: [embed] });
   }
 };
