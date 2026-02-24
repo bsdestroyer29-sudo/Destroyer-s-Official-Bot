@@ -1,7 +1,8 @@
-import { EmbedBuilder, ChannelType } from "discord.js";
+import { EmbedBuilder, ChannelType, PermissionFlagsBits } from "discord.js";
 import TicketQueue from "../models/TicketQueue.js";
+import TicketClaim from "../models/TicketClaim.js";
 
-// ✅ PUT YOUR STAFF-ONLY TICKET QUEUE CHANNEL ID HERE
+// ✅ YOUR STAFF-ONLY QUEUE CHANNEL
 const QUEUE_CHANNEL_ID = "1461790037820833884";
 
 function isTicketChannel(channel) {
@@ -19,39 +20,59 @@ function getTicketOwnerIdFromTopic(topic) {
   return match ? match[1] : null;
 }
 
+function formatClaim(guild, claim) {
+  if (!claim?.claimedById) return null;
+
+  const roleName = claim.claimedRoleId
+    ? (guild.roles.cache.get(claim.claimedRoleId)?.name || "Staff")
+    : "Staff";
+
+  return `claimed by <@${claim.claimedById}> (${roleName})`;
+}
+
 async function buildQueueEmbed(guild) {
-  const tickets = guild.channels.cache
+  const ticketChannels = guild.channels.cache
     .filter(ch => isTicketChannel(ch))
-    .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
-    .map(ch => {
-      const ownerId = getTicketOwnerIdFromTopic(ch.topic);
-      const created = `<t:${Math.floor(ch.createdTimestamp / 1000)}:R>`;
-      return `• <#${ch.id}> — ${ownerId ? `<@${ownerId}>` : "Unknown"} — ${created}`;
-    });
+    .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+
+  const ticketIds = ticketChannels.map(ch => ch.id);
+
+  const claims = await TicketClaim.find({
+    guildId: guild.id,
+    ticketChannelId: { $in: ticketIds }
+  }).lean();
+
+  const claimMap = new Map(claims.map(c => [c.ticketChannelId, c]));
+
+  const lines = ticketChannels.map(ch => {
+    const ownerId = getTicketOwnerIdFromTopic(ch.topic);
+    const created = `<t:${Math.floor(ch.createdTimestamp / 1000)}:R>`;
+
+    const claim = claimMap.get(ch.id);
+    const claimText = formatClaim(guild, claim);
+
+    return `• <#${ch.id}> — ${ownerId ? `<@${ownerId}>` : "Unknown"} — ${created}${claimText ? ` — **${claimText}**` : ""}`;
+  });
 
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
     .setTitle("🎫 Ticket Queue")
-    .setDescription(
-      tickets.length
-        ? tickets.join("\n")
-        : "✅ No open tickets right now."
-    )
-    .setFooter({ text: `Open tickets: ${tickets.length}` })
+    .setDescription(lines.length ? lines.join("\n") : "✅ No open tickets right now.")
+    .setFooter({ text: `Open tickets: ${lines.length}` })
     .setTimestamp();
 
   return embed;
 }
 
-async function upsertQueueMessage(guild) {
-  if (QUEUE_CHANNEL_ID === "PUT_TICKET_QUEUE_CHANNEL_ID_HERE") return;
-
+export async function upsertQueueMessage(guild) {
   const queueChannel = guild.channels.cache.get(QUEUE_CHANNEL_ID);
   if (!queueChannel) return;
 
+  // Ensure channel fetch for safety
+  try { await guild.channels.fetch(); } catch {}
+
   const embed = await buildQueueEmbed(guild);
 
-  // Load / create config row
   let cfg = await TicketQueue.findOne({ guildId: guild.id });
 
   if (!cfg) {
@@ -65,20 +86,17 @@ async function upsertQueueMessage(guild) {
     await cfg.save();
   }
 
-  // Try edit existing message
   if (cfg.queueMessageId) {
     try {
       const msg = await queueChannel.messages.fetch(cfg.queueMessageId);
       await msg.edit({ embeds: [embed] });
       return;
     } catch {
-      // message missing / can't fetch -> create new below
       cfg.queueMessageId = null;
       await cfg.save();
     }
   }
 
-  // Create new queue message
   const sent = await queueChannel.send({ embeds: [embed] });
   cfg.queueMessageId = sent.id;
   await cfg.save();
@@ -91,15 +109,12 @@ export default {
   async execute(client) {
     console.log("📌 Ticket Queue system loaded.");
 
-    // Initial build for all guilds
     for (const guild of client.guilds.cache.values()) {
       try {
-        await guild.channels.fetch().catch(() => {});
         await upsertQueueMessage(guild);
       } catch {}
     }
 
-    // Update on ticket channel create/delete
     client.on("channelCreate", async channel => {
       try {
         if (!channel.guild) return;
@@ -112,11 +127,16 @@ export default {
       try {
         if (!channel.guild) return;
         if (!isTicketChannel(channel)) return;
+
+        // Clean claim record if channel deleted
+        try {
+          await TicketClaim.deleteOne({ ticketChannelId: channel.id });
+        } catch {}
+
         await upsertQueueMessage(channel.guild);
       } catch {}
     });
 
-    // Optional: refresh every 60s (covers edge cases)
     setInterval(async () => {
       for (const guild of client.guilds.cache.values()) {
         try {
