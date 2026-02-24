@@ -11,4 +11,7 @@ const InviteSchema = new mongoose.Schema({
   invitedUsers: [{ type: String }]
 });
 
+// 🔒 Prevent duplicate inviter per guild
+InviteSchema.index({ guildId: 1, inviterId: 1 }, { unique: true });
+
 export default mongoose.model("Invite", InviteSchema);
