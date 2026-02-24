@@ -8,7 +8,7 @@ import {
 import ApplicationConfig from "../models/ApplicationConfig.js";
 import ApplicationSession from "../models/ApplicationSession.js";
 
-const APPLICATION_REVIEW_CHANNEL_ID = "PUT_CHANNEL_ID_HERE";
+const APPLICATION_REVIEW_CHANNEL_ID = "1475924505028333658";
 
 export default {
   name: "interactionCreate",
