@@ -147,7 +147,9 @@ async function connectMongo() {
 // INTERACTION HANDLER
 // =================================================
 client.on("interactionCreate", async interaction => {
-  if (!interaction.isChatInputCommand()) return;
+
+  if (!interaction.isChatInputCommand() &&
+      !interaction.isMessageContextMenuCommand()) return;
 
   const command = client.commands.get(interaction.commandName);
   if (!command) return;
