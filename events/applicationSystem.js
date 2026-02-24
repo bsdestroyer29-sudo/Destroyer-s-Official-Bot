@@ -8,7 +8,7 @@ import {
 import ApplicationConfig from "../models/ApplicationConfig.js";
 import ApplicationSession from "../models/ApplicationSession.js";
 
-const APPLICATION_REVIEW_CHANNEL_ID = "1475924505028333658";
+const APPLICATION_REVIEW_CHANNEL_ID = "PUT_CHANNEL_ID_HERE";
 
 export default {
   name: "interactionCreate",
@@ -21,16 +21,21 @@ export default {
     // =================================================
     if (interaction.isButton() && interaction.customId === "application_entry") {
 
-      await interaction.reply({
-        content: "📩 Check your DMs to start the application.",
-        ephemeral: true
-      });
-
       const config = await ApplicationConfig.findOne({
         guildId: interaction.guild.id
       });
 
-      if (!config) return;
+      if (!config)
+        return interaction.reply({ content: "❌ Application not configured.", ephemeral: true });
+
+      // 🔒 If closed
+      if (!config.isOpen) {
+        await interaction.reply({ content: "📩 Check your DMs.", ephemeral: true });
+
+        return interaction.user.send(
+          "❌ Sorry, this application is closed. Wait for it to be opened again."
+        ).catch(() => {});
+      }
 
       // Prevent double applications
       const existing = await ApplicationSession.findOne({
@@ -39,11 +44,16 @@ export default {
       });
 
       if (existing) {
-        return interaction.followUp({
+        return interaction.reply({
           content: "❌ You already have an active application.",
           ephemeral: true
         });
       }
+
+      await interaction.reply({
+        content: "📩 Check your DMs to start the application.",
+        ephemeral: true
+      });
 
       const session = await ApplicationSession.create({
         guildId: interaction.guild.id,
@@ -53,17 +63,15 @@ export default {
         completed: false
       });
 
-      const firstQuestion = config.questions[0];
-
       await interaction.user.send(
-        `📝 **Application Started**\n\nQuestion 1:\n${firstQuestion}`
+        `📝 **Application Started**\n\nQuestion 1:\n${config.questions[0]}`
       );
 
       return;
     }
 
     // =================================================
-    // SUBMIT BUTTON (from DM)
+    // SUBMIT BUTTON
     // =================================================
     if (interaction.isButton() && interaction.customId.startsWith("app_submit_")) {
 
@@ -72,12 +80,8 @@ export default {
       if (!session) return;
 
       const reviewChannel = client.channels.cache.get(APPLICATION_REVIEW_CHANNEL_ID);
-      if (!reviewChannel) {
-        return interaction.reply({
-          content: "❌ Review channel not found.",
-          ephemeral: true
-        });
-      }
+      if (!reviewChannel)
+        return interaction.reply({ content: "❌ Review channel not found.", ephemeral: true });
 
       const embed = new EmbedBuilder()
         .setColor("Purple")
@@ -89,10 +93,7 @@ export default {
             )
             .join("\n")
         )
-        .addFields({
-          name: "Applicant",
-          value: `<@${session.userId}>`
-        })
+        .addFields({ name: "Applicant", value: `<@${session.userId}>` })
         .setTimestamp();
 
       const row = new ActionRowBuilder().addComponents(
@@ -106,10 +107,7 @@ export default {
           .setStyle(ButtonStyle.Danger)
       );
 
-      await reviewChannel.send({
-        embeds: [embed],
-        components: [row]
-      });
+      await reviewChannel.send({ embeds: [embed], components: [row] });
 
       session.completed = true;
       await session.save();
@@ -139,14 +137,12 @@ export default {
 
       const decision = action === "accept" ? "accepted" : "declined";
 
-      // Notify applicant
       await applicant.send(
         action === "accept"
           ? "🎉 Your application has been accepted!"
           : "❌ Your application has been declined."
       ).catch(() => {});
 
-      // Disable buttons
       await interaction.update({
         content: `Application ${decision} by ${interaction.user.tag}`,
         embeds: interaction.message.embeds,
@@ -155,6 +151,5 @@ export default {
 
       return;
     }
-
   }
 };
