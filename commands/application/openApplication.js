@@ -5,6 +5,7 @@ import {
 } from "discord.js";
 
 import ApplicationConfig from "../../models/ApplicationConfig.js";
+import { updatePanel } from "../../events/applicationSystem.js";
 
 export default {
   data: new ContextMenuCommandBuilder()
@@ -14,23 +15,15 @@ export default {
 
   async execute(interaction) {
 
-    try {
-      await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ ephemeral: true });
 
-      await ApplicationConfig.findOneAndUpdate(
-        { guildId: interaction.guild.id },
-        { isOpen: true }
-      );
+    await ApplicationConfig.findOneAndUpdate(
+      { guildId: interaction.guild.id },
+      { isOpen: true }
+    );
 
-      return interaction.editReply({
-        content: "🟢 Applications are now OPEN."
-      });
+    await updatePanel(interaction.client, interaction.guild.id, true);
 
-    } catch (err) {
-      console.error(err);
-      return interaction.editReply({
-        content: "❌ Error opening applications."
-      });
-    }
+    return interaction.editReply("🟢 Applications are now OPEN.");
   }
 };
