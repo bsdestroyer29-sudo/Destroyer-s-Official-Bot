@@ -7,16 +7,10 @@ import {
   ChannelType
 } from "discord.js";
 
-// ============================
-// SET THIS AFTER YOU GIVE ID
-// ============================
-const TRANSCRIPT_CHANNEL_ID = "1475543287912861860";
+import TicketClaim from "../models/TicketClaim.js";
+import { upsertQueueMessage } from "./ticketQueue.js";
 
-// ============================
-// Helpers
-// ============================
 function staffRoleIds(guild) {
-  // Roles considered "staff" by permissions
   return guild.roles.cache
     .filter(r =>
       r.id !== guild.id &&
@@ -41,100 +35,33 @@ function parseOwnerIdFromTopic(topic) {
   return match ? match[1] : null;
 }
 
-async function fetchAllMessagesText(channel) {
-  // Fetch messages in batches (Discord returns newest first)
-  const all = [];
-  let lastId = null;
-
-  while (true) {
-    const fetched = await channel.messages.fetch({
-      limit: 100,
-      before: lastId || undefined
-    });
-
-    if (!fetched.size) break;
-
-    all.push(...fetched.values());
-    lastId = fetched.last().id;
-
-    // safety cap (avoid insane memory usage)
-    if (all.length >= 5000) break;
-  }
-
-  // Oldest -> newest
-  all.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
-
-  const lines = [];
-
-  for (const msg of all) {
-    const time = new Date(msg.createdTimestamp).toISOString();
-    const author = msg.author ? `${msg.author.tag}` : "Unknown";
-    const content = (msg.content || "").trim();
-
-    const attachments = msg.attachments?.map(a => a.url) || [];
-    const embeds = msg.embeds?.length ? ` [embeds:${msg.embeds.length}]` : "";
-
-    const header = `[${time}] ${author}${embeds}:`;
-
-    if (content) {
-      lines.push(`${header} ${content}`);
-    } else {
-      lines.push(`${header} (no text)`);
-    }
-
-    if (attachments.length) {
-      for (const url of attachments) {
-        lines.push(`  Attachment: ${url}`);
-      }
-    }
-  }
-
-  return lines.join("\n");
+function isTicketChannel(channel) {
+  return (
+    channel &&
+    channel.type === ChannelType.GuildText &&
+    typeof channel.topic === "string" &&
+    channel.topic.includes("ticketSystem=destroyer") &&
+    channel.topic.includes("ticketOwner=")
+  );
 }
 
-async function sendTranscript(guild, ticketChannel, closedByUserId) {
-  if (TRANSCRIPT_CHANNEL_ID === "PUT_TRANSCRIPT_CHANNEL_ID_HERE") return;
-
-  const transcriptChannel = guild.channels.cache.get(TRANSCRIPT_CHANNEL_ID);
-  if (!transcriptChannel) return;
-
-  const topic = ticketChannel.topic || "";
-  const ownerId = parseOwnerIdFromTopic(topic);
-
-  const transcriptText = await fetchAllMessagesText(ticketChannel);
-
-  const header =
-    `Ticket Transcript\n` +
-    `Server: ${guild.name} (${guild.id})\n` +
-    `Ticket Channel: #${ticketChannel.name} (${ticketChannel.id})\n` +
-    `Ticket Owner: ${ownerId ? `<@${ownerId}> (${ownerId})` : "Unknown"}\n` +
-    `Closed By: <@${closedByUserId}> (${closedByUserId})\n` +
-    `Closed At: ${new Date().toISOString()}\n` +
-    `----------------------------------------\n\n`;
-
-  const fullText = header + (transcriptText || "(No messages found)");
-
-  const fileBuffer = Buffer.from(fullText, "utf-8");
-
-  const embed = new EmbedBuilder()
-    .setColor(0x2f3136)
-    .setTitle("📄 Ticket Transcript")
-    .addFields(
-      { name: "Ticket", value: `#${ticketChannel.name}` },
-      { name: "Owner", value: ownerId ? `<@${ownerId}>` : "Unknown", inline: true },
-      { name: "Closed By", value: `<@${closedByUserId}>`, inline: true }
-    )
-    .setTimestamp();
-
-  await transcriptChannel.send({
-    embeds: [embed],
-    files: [{ attachment: fileBuffer, name: `transcript-${ticketChannel.id}.txt` }]
-  });
+function isStaffMember(member) {
+  return (
+    member.permissions.has(PermissionFlagsBits.ManageMessages) ||
+    member.permissions.has(PermissionFlagsBits.Administrator)
+  );
 }
 
-// ============================
-// Main Event
-// ============================
+function getStaffLabelRoleId(member) {
+  // Show the member's highest role name (excluding @everyone)
+  const topRole = member.roles.cache
+    .filter(r => r.id !== member.guild.id)
+    .sort((a, b) => b.position - a.position)
+    .first();
+
+  return topRole?.id || null;
+}
+
 export default {
   name: "interactionCreate",
   once: false,
@@ -216,12 +143,18 @@ export default {
         .setDescription(
           `Hello <@${user.id}>!\n\n` +
           "Explain your issue here and staff will help you.\n" +
+          "Staff can **Claim** this ticket when they start helping.\n" +
           "When you're done, press **Close Ticket**."
         )
         .setFooter({ text: "Destroyer | YT Bot • Ticket System" })
         .setTimestamp();
 
-      const row = new ActionRowBuilder().addComponents(
+      const controls = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("ticket_claim")
+          .setLabel("Claim")
+          .setStyle(ButtonStyle.Success)
+          .setEmoji("✅"),
         new ButtonBuilder()
           .setCustomId("ticket_close")
           .setLabel("Close Ticket")
@@ -232,14 +165,123 @@ export default {
       await ticketChannel.send({
         content: `<@${user.id}>`,
         embeds: [ticketEmbed],
-        components: [row]
+        components: [controls]
       });
 
       await interaction.editReply({
         content: `✅ Ticket created: <#${ticketChannel.id}>`
       });
 
+      // refresh queue
+      try { await upsertQueueMessage(guild); } catch {}
+
       return;
+    }
+
+    // =========================
+    // CLAIM / UNCLAIM
+    // =========================
+    if (interaction.isButton() && (interaction.customId === "ticket_claim" || interaction.customId === "ticket_unclaim")) {
+      if (!interaction.inGuild()) return;
+
+      const channel = interaction.channel;
+      if (!isTicketChannel(channel)) {
+        return interaction.reply({ content: "❌ This isn't a ticket channel.", ephemeral: true });
+      }
+
+      if (!isStaffMember(interaction.member)) {
+        return interaction.reply({ content: "❌ Staff only.", ephemeral: true });
+      }
+
+      await interaction.deferReply({ ephemeral: true });
+
+      const existing = await TicketClaim.findOne({ ticketChannelId: channel.id });
+
+      // UNCLAIM
+      if (interaction.customId === "ticket_unclaim") {
+        if (!existing?.claimedById) {
+          return interaction.editReply({ content: "❌ This ticket is not claimed." });
+        }
+
+        const isClaimer = existing.claimedById === interaction.user.id;
+        const isAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
+
+        if (!isClaimer && !isAdmin) {
+          return interaction.editReply({ content: "❌ Only the claimer or an admin can unclaim." });
+        }
+
+        existing.claimedById = null;
+        existing.claimedRoleId = null;
+        existing.claimedAt = null;
+        await existing.save();
+
+        // Update buttons on the main ticket message (best effort)
+        try {
+          const msg = interaction.message;
+          const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId("ticket_claim")
+              .setLabel("Claim")
+              .setStyle(ButtonStyle.Success)
+              .setEmoji("✅"),
+            new ButtonBuilder()
+              .setCustomId("ticket_close")
+              .setLabel("Close Ticket")
+              .setStyle(ButtonStyle.Danger)
+              .setEmoji("🔒")
+          );
+          await msg.edit({ components: [row] });
+        } catch {}
+
+        try { await upsertQueueMessage(interaction.guild); } catch {}
+
+        return interaction.editReply({ content: "✅ Ticket unclaimed." });
+      }
+
+      // CLAIM
+      if (existing?.claimedById) {
+        return interaction.editReply({
+          content: `❌ Already claimed by <@${existing.claimedById}>.`
+        });
+      }
+
+      const roleId = getStaffLabelRoleId(interaction.member);
+
+      await TicketClaim.updateOne(
+        { ticketChannelId: channel.id },
+        {
+          $set: {
+            guildId: interaction.guild.id,
+            ticketChannelId: channel.id,
+            claimedById: interaction.user.id,
+            claimedRoleId: roleId,
+            claimedAt: new Date()
+          }
+        },
+        { upsert: true }
+      );
+
+      // Change button to Unclaim (best effort)
+      try {
+        const msg = interaction.message;
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId("ticket_unclaim")
+            .setLabel("Unclaim")
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji("↩️"),
+          new ButtonBuilder()
+            .setCustomId("ticket_close")
+            .setLabel("Close Ticket")
+            .setStyle(ButtonStyle.Danger)
+            .setEmoji("🔒")
+        );
+        await msg.edit({ components: [row] });
+      } catch {}
+
+      try { await upsertQueueMessage(interaction.guild); } catch {}
+
+      return interaction.editReply({ content: "✅ Ticket claimed." });
     }
 
     // =========================
@@ -249,19 +291,14 @@ export default {
       if (!interaction.inGuild()) return;
 
       const channel = interaction.channel;
-      if (!channel || channel.type !== ChannelType.GuildText) return;
-
-      const topic = channel.topic || "";
-      if (!topic.includes("ticketSystem=destroyer")) {
+      if (!isTicketChannel(channel)) {
         return interaction.reply({ content: "❌ This isn't a ticket channel.", ephemeral: true });
       }
 
-      const ownerId = parseOwnerIdFromTopic(topic);
+      const ownerId = parseOwnerIdFromTopic(channel.topic);
 
       const isOwner = ownerId && interaction.user.id === ownerId;
-      const isStaff =
-        interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) ||
-        interaction.member.permissions.has(PermissionFlagsBits.Administrator);
+      const isStaff = isStaffMember(interaction.member);
 
       if (!isOwner && !isStaff) {
         return interaction.reply({
@@ -302,22 +339,19 @@ export default {
       }
 
       const channel = interaction.channel;
-      if (!channel || channel.type !== ChannelType.GuildText) return;
-
-      const topic = channel.topic || "";
-      if (!topic.includes("ticketSystem=destroyer")) {
+      if (!isTicketChannel(channel)) {
         return interaction.update({ content: "❌ This isn't a ticket channel.", components: [] });
       }
 
-      await interaction.update({ content: "✅ Closing ticket & saving transcript...", components: [] });
+      await interaction.update({ content: "✅ Closing ticket...", components: [] });
 
-      // Send transcript BEFORE deleting
+      // Clean claim record
       try {
-        await sendTranscript(interaction.guild, channel, interaction.user.id);
-      } catch (e) {
-        // If transcript fails, still close ticket
-        console.error("Transcript error:", e);
-      }
+        await TicketClaim.deleteOne({ ticketChannelId: channel.id });
+      } catch {}
+
+      // Refresh queue before delete
+      try { await upsertQueueMessage(interaction.guild); } catch {}
 
       const embed = new EmbedBuilder()
         .setColor(0xED4245)
