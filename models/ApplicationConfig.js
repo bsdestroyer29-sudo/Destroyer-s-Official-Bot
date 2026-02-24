@@ -6,8 +6,7 @@ const ApplicationConfigSchema = new mongoose.Schema({
   title: { type: String, required: true },
   description: { type: String, required: true },
   questions: [{ type: String }],
-
-  isOpen: { type: Boolean, default: true } // 🔥 NEW
+  isOpen: { type: Boolean, default: true }
 });
 
 export default mongoose.model("ApplicationConfig", ApplicationConfigSchema);
