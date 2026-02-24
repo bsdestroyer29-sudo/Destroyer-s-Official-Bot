@@ -7,8 +7,16 @@ import {
   ChannelType
 } from "discord.js";
 
+// ============================
+// SET THIS AFTER YOU GIVE ID
+// ============================
+const TRANSCRIPT_CHANNEL_ID = "1475543287912861860";
+
+// ============================
+// Helpers
+// ============================
 function staffRoleIds(guild) {
-  // Allow roles that have Manage Messages OR Administrator
+  // Roles considered "staff" by permissions
   return guild.roles.cache
     .filter(r =>
       r.id !== guild.id &&
@@ -28,18 +36,117 @@ function findOpenTicketChannel(guild, userId) {
   );
 }
 
+function parseOwnerIdFromTopic(topic) {
+  const match = (topic || "").match(/ticketOwner=(\d+)/);
+  return match ? match[1] : null;
+}
+
+async function fetchAllMessagesText(channel) {
+  // Fetch messages in batches (Discord returns newest first)
+  const all = [];
+  let lastId = null;
+
+  while (true) {
+    const fetched = await channel.messages.fetch({
+      limit: 100,
+      before: lastId || undefined
+    });
+
+    if (!fetched.size) break;
+
+    all.push(...fetched.values());
+    lastId = fetched.last().id;
+
+    // safety cap (avoid insane memory usage)
+    if (all.length >= 5000) break;
+  }
+
+  // Oldest -> newest
+  all.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+
+  const lines = [];
+
+  for (const msg of all) {
+    const time = new Date(msg.createdTimestamp).toISOString();
+    const author = msg.author ? `${msg.author.tag}` : "Unknown";
+    const content = (msg.content || "").trim();
+
+    const attachments = msg.attachments?.map(a => a.url) || [];
+    const embeds = msg.embeds?.length ? ` [embeds:${msg.embeds.length}]` : "";
+
+    const header = `[${time}] ${author}${embeds}:`;
+
+    if (content) {
+      lines.push(`${header} ${content}`);
+    } else {
+      lines.push(`${header} (no text)`);
+    }
+
+    if (attachments.length) {
+      for (const url of attachments) {
+        lines.push(`  Attachment: ${url}`);
+      }
+    }
+  }
+
+  return lines.join("\n");
+}
+
+async function sendTranscript(guild, ticketChannel, closedByUserId) {
+  if (TRANSCRIPT_CHANNEL_ID === "PUT_TRANSCRIPT_CHANNEL_ID_HERE") return;
+
+  const transcriptChannel = guild.channels.cache.get(TRANSCRIPT_CHANNEL_ID);
+  if (!transcriptChannel) return;
+
+  const topic = ticketChannel.topic || "";
+  const ownerId = parseOwnerIdFromTopic(topic);
+
+  const transcriptText = await fetchAllMessagesText(ticketChannel);
+
+  const header =
+    `Ticket Transcript\n` +
+    `Server: ${guild.name} (${guild.id})\n` +
+    `Ticket Channel: #${ticketChannel.name} (${ticketChannel.id})\n` +
+    `Ticket Owner: ${ownerId ? `<@${ownerId}> (${ownerId})` : "Unknown"}\n` +
+    `Closed By: <@${closedByUserId}> (${closedByUserId})\n` +
+    `Closed At: ${new Date().toISOString()}\n` +
+    `----------------------------------------\n\n`;
+
+  const fullText = header + (transcriptText || "(No messages found)");
+
+  const fileBuffer = Buffer.from(fullText, "utf-8");
+
+  const embed = new EmbedBuilder()
+    .setColor(0x2f3136)
+    .setTitle("📄 Ticket Transcript")
+    .addFields(
+      { name: "Ticket", value: `#${ticketChannel.name}` },
+      { name: "Owner", value: ownerId ? `<@${ownerId}>` : "Unknown", inline: true },
+      { name: "Closed By", value: `<@${closedByUserId}>`, inline: true }
+    )
+    .setTimestamp();
+
+  await transcriptChannel.send({
+    embeds: [embed],
+    files: [{ attachment: fileBuffer, name: `transcript-${ticketChannel.id}.txt` }]
+  });
+}
+
+// ============================
+// Main Event
+// ============================
 export default {
   name: "interactionCreate",
   once: false,
 
   async execute(interaction, client) {
+
     // =========================
-    // CREATE TICKET (panel button)
+    // CREATE TICKET
     // =========================
     if (interaction.isButton() && interaction.customId.startsWith("ticket_create_")) {
       if (!interaction.inGuild()) return;
 
-      // Acknowledge fast
       await interaction.deferReply({ ephemeral: true });
 
       const guild = interaction.guild;
@@ -55,10 +162,7 @@ export default {
       const staffIds = staffRoleIds(guild);
 
       const overwrites = [
-        {
-          id: guild.id,
-          deny: [PermissionFlagsBits.ViewChannel]
-        },
+        { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
         {
           id: user.id,
           allow: [
@@ -90,7 +194,6 @@ export default {
         }))
       ];
 
-      // Put tickets in same category as the panel channel (if it has one)
       const parent = interaction.channel?.parent ?? null;
 
       const safeName = user.username
@@ -135,11 +238,12 @@ export default {
       await interaction.editReply({
         content: `✅ Ticket created: <#${ticketChannel.id}>`
       });
+
       return;
     }
 
     // =========================
-    // CLOSE TICKET (inside ticket)
+    // CLOSE TICKET (ask confirm)
     // =========================
     if (interaction.isButton() && interaction.customId === "ticket_close") {
       if (!interaction.inGuild()) return;
@@ -152,16 +256,18 @@ export default {
         return interaction.reply({ content: "❌ This isn't a ticket channel.", ephemeral: true });
       }
 
-      // Get owner from topic
-      const match = topic.match(/ticketOwner=(\d+)/);
-      const ownerId = match ? match[1] : null;
+      const ownerId = parseOwnerIdFromTopic(topic);
 
       const isOwner = ownerId && interaction.user.id === ownerId;
-      const isStaff = interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) ||
-                      interaction.member.permissions.has(PermissionFlagsBits.Administrator);
+      const isStaff =
+        interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) ||
+        interaction.member.permissions.has(PermissionFlagsBits.Administrator);
 
       if (!isOwner && !isStaff) {
-        return interaction.reply({ content: "❌ Only the ticket owner or staff can close this.", ephemeral: true });
+        return interaction.reply({
+          content: "❌ Only the ticket owner or staff can close this.",
+          ephemeral: true
+        });
       }
 
       const confirmRow = new ActionRowBuilder().addComponents(
@@ -185,7 +291,10 @@ export default {
     // =========================
     // CONFIRM / CANCEL
     // =========================
-    if (interaction.isButton() && (interaction.customId === "ticket_close_confirm" || interaction.customId === "ticket_close_cancel")) {
+    if (
+      interaction.isButton() &&
+      (interaction.customId === "ticket_close_confirm" || interaction.customId === "ticket_close_cancel")
+    ) {
       if (!interaction.inGuild()) return;
 
       if (interaction.customId === "ticket_close_cancel") {
@@ -195,21 +304,36 @@ export default {
       const channel = interaction.channel;
       if (!channel || channel.type !== ChannelType.GuildText) return;
 
+      const topic = channel.topic || "";
+      if (!topic.includes("ticketSystem=destroyer")) {
+        return interaction.update({ content: "❌ This isn't a ticket channel.", components: [] });
+      }
+
+      await interaction.update({ content: "✅ Closing ticket & saving transcript...", components: [] });
+
+      // Send transcript BEFORE deleting
+      try {
+        await sendTranscript(interaction.guild, channel, interaction.user.id);
+      } catch (e) {
+        // If transcript fails, still close ticket
+        console.error("Transcript error:", e);
+      }
+
       const embed = new EmbedBuilder()
         .setColor(0xED4245)
         .setTitle("🔒 Ticket Closed")
         .setDescription(`Closed by <@${interaction.user.id}>`)
         .setTimestamp();
 
-      await interaction.update({ content: "✅ Closing ticket...", components: [] });
-      await channel.send({ embeds: [embed] });
+      try {
+        await channel.send({ embeds: [embed] });
+      } catch {}
 
-      // Delete shortly after (fast + clean)
       setTimeout(async () => {
         try {
           await channel.delete(`Ticket closed by ${interaction.user.tag}`);
         } catch {}
-      }, 3000);
+      }, 2500);
     }
   }
 };
