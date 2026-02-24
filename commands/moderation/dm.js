@@ -3,34 +3,22 @@ import {
   PermissionFlagsBits
 } from "discord.js";
 
+import DMSession from "../../models/DMSession.js";
+
 export default {
   data: new SlashCommandBuilder()
     .setName("dm")
     .setDescription("Send a DM to a user")
     .addUserOption(option =>
-      option
-        .setName("user")
-        .setDescription("User to DM")
-        .setRequired(true)
+      option.setName("user").setDescription("User").setRequired(true)
     )
     .addStringOption(option =>
-      option
-        .setName("message")
-        .setDescription("Message to send")
-        .setRequired(true)
+      option.setName("message").setDescription("Message").setRequired(true)
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
 
   async execute(interaction) {
 
-    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-      return interaction.reply({
-        content: "❌ Staff only.",
-        ephemeral: true
-      });
-    }
-
-    // 🔥 THIS prevents "application did not respond"
     await interaction.deferReply({ ephemeral: true });
 
     const target = interaction.options.getUser("user");
@@ -41,7 +29,21 @@ export default {
     }
 
     try {
-      await target.send(message);
+      await target.send(
+        `📩 **Message from ${interaction.guild.name} Staff**\n\n${message}\n\nReply to this message to respond.`
+      );
+
+      // Save session
+      await DMSession.findOneAndUpdate(
+        { userId: target.id },
+        {
+          guildId: interaction.guild.id,
+          userId: target.id,
+          staffId: interaction.user.id
+        },
+        { upsert: true }
+      );
+
       await interaction.editReply(`✅ DM sent to ${target.tag}`);
     } catch {
       await interaction.editReply(
