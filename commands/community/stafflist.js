@@ -9,12 +9,12 @@ export default {
 
     // 🔥 Your real role IDs
     const STAFF_ROLES = [
-      "OWNER_ROLE_ID",
-      "COOWNER_ROLE_ID",
-      "ADMIN_ROLE_ID",
-      "MODERATOR_ROLE_ID",
-      "SUPPORT_HELPER_ROLE_ID",
-      "HELPER_ROLE_ID"
+      "1461793438084239492",
+      "1471225745912103045",
+      "1461793436675080295",
+      "1461793435236307260",
+      "1461793435018199206",
+      "1461793004825083935"
     ];
 
     // 🚨 Force fetch all members (important fix)
