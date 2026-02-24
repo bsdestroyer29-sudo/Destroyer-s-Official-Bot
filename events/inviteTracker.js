@@ -13,110 +13,110 @@ export default {
 
   async execute(client) {
 
-    console.log("📨 Invite Tracker Loaded.");
+    console.log("📨 Advanced Invite Tracker Loaded.");
 
-    // ========================================
-    // CACHE INVITES ON START
-    // ========================================
+    const inviteCache = new Map();
+
+    // ================= CACHE ON READY =================
     for (const guild of client.guilds.cache.values()) {
-      try {
-        const invites = await guild.invites.fetch();
+      const invites = await guild.invites.fetch().catch(() => null);
+      if (!invites) continue;
 
-        for (const invite of invites.values()) {
-          await Invite.findOneAndUpdate(
-            { guildId: guild.id, code: invite.code },
-            {
-              guildId: guild.id,
-              code: invite.code,
-              inviterId: invite.inviter?.id || "Unknown",
-              uses: invite.uses
-            },
-            { upsert: true }
-          );
-        }
-      } catch {}
+      inviteCache.set(guild.id, new Map(
+        invites.map(inv => [inv.code, inv.uses])
+      ));
     }
 
-    // ========================================
-    // INVITE CREATE
-    // ========================================
-    client.on("inviteCreate", async invite => {
-      await Invite.create({
-        guildId: invite.guild.id,
-        code: invite.code,
-        inviterId: invite.inviter?.id || "Unknown",
-        uses: invite.uses
-      });
+    // ================= INVITE CREATE =================
+    client.on("inviteCreate", invite => {
+      const guildInvites = inviteCache.get(invite.guild.id);
+      if (guildInvites)
+        guildInvites.set(invite.code, invite.uses);
     });
 
-    // ========================================
-    // INVITE DELETE
-    // ========================================
-    client.on("inviteDelete", async invite => {
-      await Invite.deleteOne({
-        guildId: invite.guild.id,
-        code: invite.code
-      });
-    });
-
-    // ========================================
-    // MEMBER JOIN → DETECT USED INVITE
-    // ========================================
+    // ================= MEMBER JOIN =================
     client.on("guildMemberAdd", async member => {
 
       const guild = member.guild;
+      const newInvites = await guild.invites.fetch().catch(() => null);
+      if (!newInvites) return;
+
+      const oldInvites = inviteCache.get(guild.id);
+      inviteCache.set(guild.id, new Map(
+        newInvites.map(inv => [inv.code, inv.uses])
+      ));
+
+      let usedInvite;
+
+      for (const invite of newInvites.values()) {
+        const previousUses = oldInvites?.get(invite.code) || 0;
+        if (invite.uses > previousUses) {
+          usedInvite = invite;
+          break;
+        }
+      }
+
       const logChannel = getLogChannel(client);
 
-      try {
-        const newInvites = await guild.invites.fetch();
-        const storedInvites = await Invite.find({ guildId: guild.id });
+      if (!usedInvite) {
+        if (logChannel)
+          logChannel.send(`➕ ${member.user.tag} joined (Unknown invite)`);
+        return;
+      }
 
-        let usedInvite = null;
+      // 🚫 Anti self invite
+      if (usedInvite.inviter?.id === member.id) {
+        if (logChannel)
+          logChannel.send(`🚫 ${member.user.tag} tried self-invite.`);
+        return;
+      }
 
-        for (const invite of newInvites.values()) {
-          const stored = storedInvites.find(i => i.code === invite.code);
+      const inviterId = usedInvite.inviter?.id;
+      if (!inviterId) return;
 
-          if (!stored) continue;
+      const data = await Invite.findOneAndUpdate(
+        { guildId: guild.id, inviterId },
+        { $inc: { invites: 1 }, $push: { invitedUsers: member.id } },
+        { upsert: true, new: true }
+      );
 
-          if (invite.uses > stored.uses) {
-            usedInvite = invite;
-            break;
-          }
-        }
+      const embed = new EmbedBuilder()
+        .setColor("Green")
+        .setTitle("🎉 New Invite")
+        .addFields(
+          { name: "User", value: member.user.tag },
+          { name: "Invited By", value: `<@${inviterId}>` },
+          { name: "Total Invites", value: data.invites.toString() }
+        )
+        .setTimestamp();
 
-        if (!usedInvite) {
-          if (logChannel) {
-            logChannel.send(
-              `➕ ${member.user.tag} joined (Invite not detected)`
-            );
-          }
-          return;
-        }
+      if (logChannel)
+        logChannel.send({ embeds: [embed] });
+    });
 
-        // Update stored uses
-        await Invite.findOneAndUpdate(
-          { guildId: guild.id, code: usedInvite.code },
-          { uses: usedInvite.uses }
+    // ================= FAKE INVITE DETECTION =================
+    client.on("guildMemberRemove", async member => {
+
+      const data = await Invite.findOne({
+        guildId: member.guild.id,
+        invitedUsers: member.id
+      });
+
+      if (!data) return;
+
+      data.invites -= 1;
+      data.leaves += 1;
+      data.fakeInvites += 1;
+
+      data.invitedUsers = data.invitedUsers.filter(id => id !== member.id);
+
+      await data.save();
+
+      const logChannel = getLogChannel(client);
+      if (logChannel) {
+        logChannel.send(
+          `⚠️ Fake Invite Detected\nUser: ${member.user.tag}\nInviter: <@${data.inviterId}>`
         );
-
-        const embed = new EmbedBuilder()
-          .setColor("Green")
-          .setTitle("🎉 New Member Joined")
-          .addFields(
-            { name: "User", value: `${member.user.tag}` },
-            { name: "Invited By", value: `<@${usedInvite.inviter?.id}>` },
-            { name: "Invite Code", value: usedInvite.code },
-            { name: "Total Uses", value: usedInvite.uses.toString() }
-          )
-          .setThumbnail(member.user.displayAvatarURL())
-          .setTimestamp();
-
-        if (logChannel) {
-          logChannel.send({ embeds: [embed] });
-        }
-
-      } catch (err) {
-        console.error("Invite detection error:", err);
       }
     });
 
