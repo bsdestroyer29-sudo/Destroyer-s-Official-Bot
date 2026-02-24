@@ -6,10 +6,9 @@ import {
 export default {
   data: new SlashCommandBuilder()
     .setName("id")
-    .setDescription("Get IDs of different objects")
+    .setDescription("Get IDs quickly")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
 
-    // ROLE ID
     .addSubcommand(sub =>
       sub
         .setName("role")
@@ -17,12 +16,11 @@ export default {
         .addRoleOption(option =>
           option
             .setName("role")
-            .setDescription("Select a role")
+            .setDescription("Select role")
             .setRequired(true)
         )
     )
 
-    // USER ID
     .addSubcommand(sub =>
       sub
         .setName("user")
@@ -30,12 +28,11 @@ export default {
         .addUserOption(option =>
           option
             .setName("user")
-            .setDescription("Select a user")
+            .setDescription("Select user")
             .setRequired(true)
         )
     )
 
-    // CHANNEL ID
     .addSubcommand(sub =>
       sub
         .setName("channel")
@@ -43,12 +40,11 @@ export default {
         .addChannelOption(option =>
           option
             .setName("channel")
-            .setDescription("Select a channel")
+            .setDescription("Select channel")
             .setRequired(true)
         )
     )
 
-    // SERVER ID
     .addSubcommand(sub =>
       sub
         .setName("server")
@@ -58,36 +54,27 @@ export default {
   async execute(interaction) {
 
     const sub = interaction.options.getSubcommand();
+    let id;
 
     if (sub === "role") {
-      const role = interaction.options.getRole("role");
-      return interaction.reply({
-        content: `🎭 Role ID: \`${role.id}\``,
-        ephemeral: true
-      });
+      id = interaction.options.getRole("role").id;
     }
 
     if (sub === "user") {
-      const user = interaction.options.getUser("user");
-      return interaction.reply({
-        content: `👤 User ID: \`${user.id}\``,
-        ephemeral: true
-      });
+      id = interaction.options.getUser("user").id;
     }
 
     if (sub === "channel") {
-      const channel = interaction.options.getChannel("channel");
-      return interaction.reply({
-        content: `📁 Channel ID: \`${channel.id}\``,
-        ephemeral: true
-      });
+      id = interaction.options.getChannel("channel").id;
     }
 
     if (sub === "server") {
-      return interaction.reply({
-        content: `🌍 Server ID: \`${interaction.guild.id}\``,
-        ephemeral: true
-      });
+      id = interaction.guild.id;
     }
+
+    return interaction.reply({
+      content: `\`\`\`\n${id}\n\`\`\``,
+      ephemeral: true
+    });
   }
 };
