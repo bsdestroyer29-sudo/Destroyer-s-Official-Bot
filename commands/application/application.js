@@ -4,7 +4,8 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  PermissionFlagsBits
+  PermissionFlagsBits,
+  ChannelType
 } from "discord.js";
 
 import ApplicationConfig from "../../models/ApplicationConfig.js";
@@ -20,10 +21,16 @@ export default {
         .setName("setup")
         .setDescription("Setup application panel")
         .addStringOption(o =>
-          o.setName("title").setRequired(true)
+          o.setName("title").setDescription("Panel title").setRequired(true)
         )
         .addStringOption(o =>
-          o.setName("description").setRequired(true)
+          o.setName("description").setDescription("Panel description").setRequired(true)
+        )
+        .addChannelOption(o =>
+          o.setName("panel_channel")
+            .setDescription("Channel where the panel will be sent")
+            .addChannelTypes(ChannelType.GuildText)
+            .setRequired(true)
         );
 
       for (let i = 1; i <= 10; i++) {
@@ -41,6 +48,7 @@ export default {
 
     const title = interaction.options.getString("title");
     const description = interaction.options.getString("description");
+    const panelChannel = interaction.options.getChannel("panel_channel");
 
     const questions = [];
 
@@ -49,11 +57,17 @@ export default {
       if (q) questions.push(q);
     }
 
+    if (questions.length < 1)
+      return interaction.reply({ content: "❌ Minimum 1 question required.", ephemeral: true });
+
+    if (questions.length > 10)
+      return interaction.reply({ content: "❌ Maximum 10 questions allowed.", ephemeral: true });
+
     await ApplicationConfig.findOneAndUpdate(
       { guildId: interaction.guild.id },
       {
         guildId: interaction.guild.id,
-        panelChannelId: interaction.channel.id,
+        panelChannelId: panelChannel.id,
         title,
         description,
         questions
@@ -73,13 +87,13 @@ export default {
         .setStyle(ButtonStyle.Success)
     );
 
-    await interaction.channel.send({
+    await panelChannel.send({
       embeds: [embed],
       components: [row]
     });
 
-    interaction.reply({
-      content: `✅ Application panel created with ${questions.length} questions.`,
+    return interaction.reply({
+      content: `✅ Application panel created in ${panelChannel}.`,
       ephemeral: true
     });
   }
