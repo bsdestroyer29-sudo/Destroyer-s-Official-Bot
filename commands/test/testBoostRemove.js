@@ -8,7 +8,7 @@ const BOOST_CHANNEL_ID = "1475950368071487659";
 
 export default {
   data: new SlashCommandBuilder()
-    .setName("testboostremove")
+    .setName("testboost remove")
     .setDescription("Simulate boost removal")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addUserOption(option =>
