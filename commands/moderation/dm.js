@@ -6,7 +6,7 @@ import {
 export default {
   data: new SlashCommandBuilder()
     .setName("dm")
-    .setDescription("Send a direct message to a user")
+    .setDescription("Send a DM to a user")
     .addUserOption(option =>
       option
         .setName("user")
@@ -23,37 +23,30 @@ export default {
 
   async execute(interaction) {
 
-    // Extra safety check
     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
       return interaction.reply({
-        content: "❌ You need Manage Messages permission.",
+        content: "❌ Staff only.",
         ephemeral: true
       });
     }
+
+    // 🔥 THIS prevents "application did not respond"
+    await interaction.deferReply({ ephemeral: true });
 
     const target = interaction.options.getUser("user");
     const message = interaction.options.getString("message");
 
     if (target.bot) {
-      return interaction.reply({
-        content: "❌ You cannot DM bots.",
-        ephemeral: true
-      });
+      return interaction.editReply("❌ You cannot DM bots.");
     }
 
     try {
       await target.send(message);
-
-      await interaction.reply({
-        content: `✅ Successfully sent DM to ${target.tag}`,
-        ephemeral: true
-      });
-
-    } catch (error) {
-      await interaction.reply({
-        content: `❌ Could not DM ${target.tag}. They may have DMs disabled.`,
-        ephemeral: true
-      });
+      await interaction.editReply(`✅ DM sent to ${target.tag}`);
+    } catch {
+      await interaction.editReply(
+        `❌ Could not DM ${target.tag}. They may have DMs disabled.`
+      );
     }
   }
 };
