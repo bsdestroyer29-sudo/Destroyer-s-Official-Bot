@@ -14,14 +14,23 @@ export default {
 
   async execute(interaction) {
 
-    await ApplicationConfig.findOneAndUpdate(
-      { guildId: interaction.guild.id },
-      { isOpen: false }
-    );
+    try {
+      await interaction.deferReply({ ephemeral: true });
 
-    return interaction.reply({
-      content: "🔒 Applications are now CLOSED.",
-      ephemeral: true
-    });
+      await ApplicationConfig.findOneAndUpdate(
+        { guildId: interaction.guild.id },
+        { isOpen: false }
+      );
+
+      return interaction.editReply({
+        content: "🔒 Applications are now CLOSED."
+      });
+
+    } catch (err) {
+      console.error(err);
+      return interaction.editReply({
+        content: "❌ Error closing applications."
+      });
+    }
   }
 };
