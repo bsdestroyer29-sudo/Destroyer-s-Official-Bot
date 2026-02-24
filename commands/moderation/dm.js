@@ -5,10 +5,13 @@ import {
 
 import DMSession from "../../models/DMSession.js";
 
+// 🔥 PUT YOUR DM LOG CHANNEL ID HERE
+const DM_LOG_CHANNEL_ID = "PUT_DM_LOG_CHANNEL_ID";
+
 export default {
   data: new SlashCommandBuilder()
     .setName("dm")
-    .setDescription("Send a DM to a user")
+    .setDescription("Start or continue DM conversation")
     .addUserOption(option =>
       option.setName("user").setDescription("User").setRequired(true)
     )
@@ -30,24 +33,33 @@ export default {
 
     try {
       await target.send(
-        `📩 **Message from ${interaction.guild.name} Staff**\n\n${message}\n\nReply to this message to respond.`
+        `📩 **Message from ${interaction.guild.name} Staff**\n\n${message}`
       );
 
-      // Save session
       await DMSession.findOneAndUpdate(
         { userId: target.id },
         {
           guildId: interaction.guild.id,
           userId: target.id,
-          staffId: interaction.user.id
+          staffId: interaction.user.id,
+          logChannelId: DM_LOG_CHANNEL_ID,
+          active: true
         },
         { upsert: true }
       );
 
+      const logChannel = interaction.guild.channels.cache.get(DM_LOG_CHANNEL_ID);
+      if (logChannel) {
+        logChannel.send(
+          `📤 **Staff → ${target.tag}**\n${message}`
+        );
+      }
+
       await interaction.editReply(`✅ DM sent to ${target.tag}`);
+
     } catch {
       await interaction.editReply(
-        `❌ Could not DM ${target.tag}. They may have DMs disabled.`
+        `❌ Could not DM ${target.tag}.`
       );
     }
   }
