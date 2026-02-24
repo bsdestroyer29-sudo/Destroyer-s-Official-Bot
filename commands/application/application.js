@@ -13,21 +13,26 @@ import ApplicationConfig from "../../models/ApplicationConfig.js";
 export default {
   data: new SlashCommandBuilder()
     .setName("application")
-    .setDescription("Application system")
+    .setDescription("Application system setup")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
 
     .addSubcommand(sub => {
       sub
         .setName("setup")
-        .setDescription("Setup application panel")
+        .setDescription("Setup the application panel")
         .addStringOption(o =>
-          o.setName("title").setRequired(true)
+          o.setName("title")
+            .setDescription("Panel title")
+            .setRequired(true)
         )
         .addStringOption(o =>
-          o.setName("description").setRequired(true)
+          o.setName("description")
+            .setDescription("Panel description")
+            .setRequired(true)
         )
         .addChannelOption(o =>
           o.setName("panel_channel")
+            .setDescription("Channel where panel will be sent")
             .addChannelTypes(ChannelType.GuildText)
             .setRequired(true)
         );
@@ -35,6 +40,7 @@ export default {
       for (let i = 1; i <= 10; i++) {
         sub.addStringOption(o =>
           o.setName(`question${i}`)
+            .setDescription(`Application question ${i}`)
             .setRequired(i === 1)
         );
       }
@@ -49,6 +55,7 @@ export default {
     const panelChannel = interaction.options.getChannel("panel_channel");
 
     const questions = [];
+
     for (let i = 1; i <= 10; i++) {
       const q = interaction.options.getString(`question${i}`);
       if (q) questions.push(q);
@@ -82,7 +89,7 @@ export default {
     await panelChannel.send({ embeds: [embed], components: [row] });
 
     return interaction.reply({
-      content: `✅ Panel created in ${panelChannel}.`,
+      content: `✅ Application panel created in ${panelChannel}.`,
       ephemeral: true
     });
   }
