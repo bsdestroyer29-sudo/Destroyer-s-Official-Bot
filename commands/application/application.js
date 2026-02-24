@@ -20,27 +20,17 @@ export default {
         .setName("setup")
         .setDescription("Setup application panel")
         .addStringOption(o =>
-          o.setName("title")
-            .setDescription("Panel title")
-            .setRequired(true)
+          o.setName("title").setRequired(true)
         )
         .addStringOption(o =>
-          o.setName("description")
-            .setDescription("Panel description")
-            .setRequired(true)
-        )
-        .addChannelOption(o =>
-          o.setName("review_channel")
-            .setDescription("Where applications will be sent")
-            .setRequired(true)
+          o.setName("description").setRequired(true)
         );
 
-      // Add 10 optional question slots
       for (let i = 1; i <= 10; i++) {
         sub.addStringOption(o =>
           o.setName(`question${i}`)
             .setDescription(`Question ${i}`)
-            .setRequired(i === 1) // Only first required
+            .setRequired(i === 1)
         );
       }
 
@@ -49,16 +39,8 @@ export default {
 
   async execute(interaction) {
 
-    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      return interaction.reply({
-        content: "❌ Admin only.",
-        ephemeral: true
-      });
-    }
-
     const title = interaction.options.getString("title");
     const description = interaction.options.getString("description");
-    const reviewChannel = interaction.options.getChannel("review_channel");
 
     const questions = [];
 
@@ -67,27 +49,11 @@ export default {
       if (q) questions.push(q);
     }
 
-    // Safety validation
-    if (questions.length < 1) {
-      return interaction.reply({
-        content: "❌ You must provide at least 1 question.",
-        ephemeral: true
-      });
-    }
-
-    if (questions.length > 10) {
-      return interaction.reply({
-        content: "❌ Maximum 10 questions allowed.",
-        ephemeral: true
-      });
-    }
-
     await ApplicationConfig.findOneAndUpdate(
       { guildId: interaction.guild.id },
       {
         guildId: interaction.guild.id,
         panelChannelId: interaction.channel.id,
-        reviewChannelId: reviewChannel.id,
         title,
         description,
         questions
@@ -112,7 +78,7 @@ export default {
       components: [row]
     });
 
-    return interaction.reply({
+    interaction.reply({
       content: `✅ Application panel created with ${questions.length} questions.`,
       ephemeral: true
     });
