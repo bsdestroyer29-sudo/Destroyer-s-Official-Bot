@@ -1,4 +1,12 @@
-import { Client, GatewayIntentBits, Collection, REST, Routes } from "discord.js";
+import {
+  Client,
+  GatewayIntentBits,
+  Collection,
+  REST,
+  Routes,
+  Partials
+} from "discord.js";
+
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import fs from "fs";
@@ -7,11 +15,11 @@ import { fileURLToPath } from "url";
 
 dotenv.config();
 
-// ===== PATH FIX =====
+// ================= PATH FIX =================
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ===== ENV =====
+// ================= ENV =================
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
@@ -22,9 +30,7 @@ if (!TOKEN || !CLIENT_ID || !GUILD_ID || !MONGO_URI) {
   process.exit(1);
 }
 
-// ===== CLIENT WITH FULL LOGGING INTENTS =====
-import { Client, GatewayIntentBits, Partials } from "discord.js";
-
+// ================= CLIENT =================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
