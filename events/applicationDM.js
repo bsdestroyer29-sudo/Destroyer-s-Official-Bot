@@ -13,7 +13,6 @@ export default {
 
   async execute(message, client) {
 
-    // Only DMs
     if (message.guild) return;
     if (message.author.bot) return;
 
@@ -28,11 +27,8 @@ export default {
       guildId: session.guildId
     });
 
-    if (!config) return;
-
     const question = config.questions[session.currentQuestion];
 
-    // Save answer
     session.answers.push({
       question,
       answer: message.content
@@ -40,7 +36,6 @@ export default {
 
     session.currentQuestion += 1;
 
-    // If finished all questions
     if (session.currentQuestion >= config.questions.length) {
 
       const row = new ActionRowBuilder().addComponents(
@@ -51,19 +46,15 @@ export default {
       );
 
       await message.author.send({
-        content: "✅ All questions answered.\nPress **Submit** to send your application.",
+        content: "All questions answered. Press Submit.",
         components: [row]
       });
 
-      await session.save();
-      return;
+      return session.save();
     }
 
-    // Send next question
-    const nextQuestion = config.questions[session.currentQuestion];
-
     await message.author.send(
-      `Question ${session.currentQuestion + 1}:\n${nextQuestion}`
+      `Question ${session.currentQuestion + 1}:\n${config.questions[session.currentQuestion]}`
     );
 
     await session.save();
