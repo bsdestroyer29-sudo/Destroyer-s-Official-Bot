@@ -224,14 +224,22 @@ export default {
       session.reviewed = true;
       await session.save();
 
-      const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
-      if (logChannel) {
-        logChannel.send(
-          `📋 Application ${decisionText.toUpperCase()}\n` +
-          `Applicant: <@${session.userId}>\n` +
-          `Reviewed by: <@${interaction.user.id}>`
-        );
-      }
+const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
+
+if (logChannel) {
+  const reviewerText = `${interaction.user.tag} (${interaction.user.id})`;
+
+  const logEmbed = new EmbedBuilder()
+    .setColor(action === "accept" ? "Green" : "Red")
+    .setTitle(`📋 Application ${decisionText.toUpperCase()}`)
+    .addFields(
+      { name: "Applicant", value: applicantText },
+      { name: "Reviewed By", value: reviewerText }
+    )
+    .setTimestamp();
+
+  logChannel.send({ embeds: [logEmbed], allowedMentions: { parse: [] } });
+}
 
       await interaction.update({
         content: `Application ${decisionText} by ${interaction.user.tag}`,
