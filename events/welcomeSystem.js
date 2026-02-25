@@ -1,7 +1,7 @@
 import { EmbedBuilder } from "discord.js";
 
 const WELCOME_CHANNEL_ID = "1461714906297405586";
-const NEWBIE_ROLE_ID = "HERE";
+const NEWBIE_ROLE_ID = "1461791416706404575";
 
 export default {
   name: "guildMemberAdd",
