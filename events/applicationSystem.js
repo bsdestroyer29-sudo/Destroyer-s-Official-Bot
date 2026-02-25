@@ -109,7 +109,7 @@ export default {
 
       await interaction.reply({ content: "📩 Check your DMs.", ephemeral: true });
 
-      const session = await ApplicationSession.create({
+      await ApplicationSession.create({
         guildId: interaction.guild.id,
         userId: interaction.user.id,
         answers: [],
@@ -125,17 +125,42 @@ export default {
     }
 
     /* ===============================
-       SUBMIT BUTTON
+       SUBMIT BUTTON (ANTI-SPAM FIX)
     =============================== */
     if (interaction.customId.startsWith("app_submit_")) {
 
       const sessionId = interaction.customId.split("_")[2];
       const session = await ApplicationSession.findById(sessionId);
-      if (!session) return;
+
+      if (!session) {
+        // Remove button anyway if session missing
+        return interaction.update({
+          content: "❌ This application session no longer exists.",
+          components: []
+        }).catch(() => {});
+      }
+
+      // ✅ HARD STOP: already submitted (prevents infinite spam)
+      if (session.submitted === true) {
+        return interaction.update({
+          content: "✅ You already submitted this application.",
+          components: []
+        }).catch(() => {});
+      }
 
       const reviewChannel = client.channels.cache.get(APPLICATION_REVIEW_CHANNEL_ID);
-      if (!reviewChannel)
-        return interaction.reply({ content: "Review channel not found.", ephemeral: true });
+      if (!reviewChannel) {
+        return interaction.update({
+          content: "❌ Review channel not found. Tell staff.",
+          components: []
+        }).catch(() => {});
+      }
+
+      // ✅ Mark as submitted BEFORE sending (prevents double-submit race)
+      session.completed = true;
+      session.submitted = true;
+      session.reviewed = false;
+      await session.save();
 
       const embed = new EmbedBuilder()
         .setColor("Purple")
@@ -164,16 +189,11 @@ export default {
         components: [row]
       });
 
-      session.completed = true;
-      session.submitted = true;
-      session.reviewed = false;
-
-      await session.save();
-
-      return interaction.reply({
+      // ✅ UI FIX: remove submit button so it can’t be clicked again
+      return interaction.update({
         content: "✅ Application submitted successfully.",
-        ephemeral: true
-      });
+        components: []
+      }).catch(() => {});
     }
 
     /* ===============================
