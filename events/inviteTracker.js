@@ -1,11 +1,4 @@
 import Invite from "../models/Invite.js";
-import { EmbedBuilder } from "discord.js";
-
-const LOG_CHANNEL_ID = "1475508584744747162";
-
-function getLogChannel(client) {
-  return client.channels.cache.get(LOG_CHANNEL_ID);
-}
 
 export default {
   name: "ready",
@@ -13,110 +6,140 @@ export default {
 
   async execute(client) {
 
-    console.log("📨 Advanced Invite Tracker Loaded.");
+    // =====================================
+    // CACHE INVITES ON START
+    // =====================================
 
-    const inviteCache = new Map();
+    client.inviteCache = new Map();
 
-    // ================= CACHE ON READY =================
     for (const guild of client.guilds.cache.values()) {
-      const invites = await guild.invites.fetch().catch(() => null);
-      if (!invites) continue;
-
-      inviteCache.set(guild.id, new Map(
-        invites.map(inv => [inv.code, inv.uses])
-      ));
+      const invites = await guild.invites.fetch();
+      client.inviteCache.set(
+        guild.id,
+        new Map(invites.map(inv => [inv.code, inv.uses]))
+      );
     }
 
-    // ================= INVITE CREATE =================
-    client.on("inviteCreate", invite => {
-      const guildInvites = inviteCache.get(invite.guild.id);
-      if (guildInvites)
-        guildInvites.set(invite.code, invite.uses);
-    });
+    // =====================================
+    // MEMBER JOIN
+    // =====================================
 
-    // ================= MEMBER JOIN =================
     client.on("guildMemberAdd", async member => {
 
-      const guild = member.guild;
-      const newInvites = await guild.invites.fetch().catch(() => null);
-      if (!newInvites) return;
+      const newInvites = await member.guild.invites.fetch();
+      const oldInvites = client.inviteCache.get(member.guild.id);
 
-      const oldInvites = inviteCache.get(guild.id);
-      inviteCache.set(guild.id, new Map(
-        newInvites.map(inv => [inv.code, inv.uses])
-      ));
-
-      let usedInvite;
-
-      for (const invite of newInvites.values()) {
-        const previousUses = oldInvites?.get(invite.code) || 0;
-        if (invite.uses > previousUses) {
-          usedInvite = invite;
-          break;
-        }
-      }
-
-      const logChannel = getLogChannel(client);
-
-      if (!usedInvite) {
-        if (logChannel)
-          logChannel.send(`➕ ${member.user.tag} joined (Unknown invite)`);
-        return;
-      }
-
-      // 🚫 Anti self invite
-      if (usedInvite.inviter?.id === member.id) {
-        if (logChannel)
-          logChannel.send(`🚫 ${member.user.tag} tried self-invite.`);
-        return;
-      }
-
-      const inviterId = usedInvite.inviter?.id;
-      if (!inviterId) return;
-
-      const data = await Invite.findOneAndUpdate(
-        { guildId: guild.id, inviterId },
-        { $inc: { invites: 1 }, $push: { invitedUsers: member.id } },
-        { upsert: true, new: true }
+      const usedInvite = newInvites.find(inv =>
+        inv.uses > (oldInvites?.get(inv.code) || 0)
       );
 
-      const embed = new EmbedBuilder()
-        .setColor("Green")
-        .setTitle("🎉 New Invite")
-        .addFields(
-          { name: "User", value: member.user.tag },
-          { name: "Invited By", value: `<@${inviterId}>` },
-          { name: "Total Invites", value: data.invites.toString() }
-        )
-        .setTimestamp();
+      if (!usedInvite) return;
 
-      if (logChannel)
-        logChannel.send({ embeds: [embed] });
-    });
-
-    // ================= FAKE INVITE DETECTION =================
-    client.on("guildMemberRemove", async member => {
-
-      const data = await Invite.findOne({
+      let record = await Invite.findOne({
         guildId: member.guild.id,
-        invitedUsers: member.id
+        inviterId: usedInvite.inviter.id
       });
 
-      if (!data) return;
+      if (!record) {
+        record = await Invite.create({
+          guildId: member.guild.id,
+          inviterId: usedInvite.inviter.id,
+          invites: 0,
+          fakeInvites: 0,
+          leaves: 0,
+          invitedUsers: []
+        });
+      }
 
-      data.invites -= 1;
-      data.leaves += 1;
-      data.fakeInvites += 1;
+      record.invites += 1;
+      record.invitedUsers.push(member.id);
 
-      data.invitedUsers = data.invitedUsers.filter(id => id !== member.id);
+      await record.save();
 
-      await data.save();
+      // Update cache
+      client.inviteCache.set(
+        member.guild.id,
+        new Map(newInvites.map(inv => [inv.code, inv.uses]))
+      );
+    });
 
-      const logChannel = getLogChannel(client);
-      if (logChannel) {
-        logChannel.send(
-          `⚠️ Fake Invite Detected\nUser: ${member.user.tag}\nInviter: <@${data.inviterId}>`
+    // =====================================
+    // MEMBER LEAVE (FIXED)
+    // =====================================
+
+    client.on("guildMemberRemove", async member => {
+
+      try {
+
+        // Check kick
+        const kickLogs = await member.guild.fetchAuditLogs({
+          limit: 1,
+          type: 20 // MEMBER_KICK
+        });
+
+        const kickEntry = kickLogs.entries.first();
+
+        if (
+          kickEntry &&
+          kickEntry.target.id === member.id &&
+          Date.now() - kickEntry.createdTimestamp < 5000
+        ) {
+          return; // Ignore kicks
+        }
+
+        // Check ban
+        const banLogs = await member.guild.fetchAuditLogs({
+          limit: 1,
+          type: 22 // MEMBER_BAN_ADD
+        });
+
+        const banEntry = banLogs.entries.first();
+
+        if (
+          banEntry &&
+          banEntry.target.id === member.id &&
+          Date.now() - banEntry.createdTimestamp < 5000
+        ) {
+          return; // Ignore bans
+        }
+
+        // If not kicked or banned → normal leave
+
+        const record = await Invite.findOne({
+          guildId: member.guild.id,
+          invitedUsers: member.id
+        });
+
+        if (!record) return;
+
+        record.invites -= 1;
+        record.fakeInvites += 1;
+        record.invitedUsers = record.invitedUsers.filter(
+          id => id !== member.id
         );
+
+        await record.save();
+
+      } catch (err) {
+        console.error(err);
+      }
+    });
+
+    // =====================================
+    // INVITE CREATE / DELETE
+    // =====================================
+
+    client.on("inviteCreate", invite => {
+      const guildInvites = client.inviteCache.get(invite.guild.id) || new Map();
+      guildInvites.set(invite.code, invite.uses);
+      client.inviteCache.set(invite.guild.id, guildInvites);
+    });
+
+    client.on("inviteDelete", invite => {
+      const guildInvites = client.inviteCache.get(invite.guild.id);
+      if (guildInvites) {
+        guildInvites.delete(invite.code);
+        client.inviteCache.set(invite.guild.id, guildInvites);
       }
     });
 
