@@ -1,4 +1,5 @@
 import {
+  EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle
@@ -6,6 +7,11 @@ import {
 
 import ApplicationSession from "../models/ApplicationSession.js";
 import ApplicationConfig from "../models/ApplicationConfig.js";
+
+function createProgressBar(current, total) {
+  const percent = Math.floor((current / total) * 10);
+  return "🟦".repeat(percent) + "⬜".repeat(10 - percent);
+}
 
 export default {
   name: "messageCreate",
@@ -24,39 +30,83 @@ export default {
     if (!session) return;
 
     const config = await ApplicationConfig.findOne({
-      guildId: session.guildId
+      panelMessageId: session.panelMessageId
     });
 
-    const question = config.questions[session.currentQuestion];
+    if (!config) return;
 
+    if (!config.isOpen) {
+      return message.author.send(
+        "❌ Sorry, this application is closed. Wait for it to be opened again."
+      );
+    }
+
+    const currentIndex = session.currentQuestion;
+    const questionText = config.questions[currentIndex];
+
+    // Save answer
     session.answers.push({
-      question,
+      question: questionText,
       answer: message.content
     });
 
     session.currentQuestion += 1;
 
+    // If finished all questions
     if (session.currentQuestion >= config.questions.length) {
+
+      await session.save();
+
+      const embed = new EmbedBuilder()
+        .setColor("Green")
+        .setTitle("✅ Application Complete")
+        .setDescription(
+          "You answered all questions.\n\nPress **Submit** when you're ready."
+        )
+        .setFooter({
+          text: `Total Questions: ${config.questions.length}`
+        })
+        .setTimestamp();
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`app_submit_${session._id}`)
-          .setLabel("Submit")
-          .setStyle(ButtonStyle.Primary)
+          .setLabel("Submit Application")
+          .setStyle(ButtonStyle.Success)
       );
 
-      await message.author.send({
-        content: "All questions answered. Press Submit.",
+      return message.author.send({
+        embeds: [embed],
         components: [row]
       });
-
-      return session.save();
     }
 
-    await message.author.send(
-      `Question ${session.currentQuestion + 1}:\n${config.questions[session.currentQuestion]}`
-    );
+    // Send next question styled
+    const nextQuestion = config.questions[session.currentQuestion];
+
+    const embed = new EmbedBuilder()
+      .setColor("Blue")
+      .setTitle(`📋 ${config.title}`)
+      .setDescription(
+        `### Question ${session.currentQuestion + 1} / ${config.questions.length}\n\n` +
+        `**${nextQuestion}**`
+      )
+      .addFields({
+        name: "Progress",
+        value:
+          createProgressBar(
+            session.currentQuestion,
+            config.questions.length
+          ) +
+          `\n${session.currentQuestion}/${config.questions.length}`
+      })
+      .setFooter({
+        text: "Reply with your answer below."
+      })
+      .setTimestamp();
 
     await session.save();
+
+    return message.author.send({ embeds: [embed] });
   }
 };
