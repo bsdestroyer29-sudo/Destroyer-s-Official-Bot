@@ -8,14 +8,30 @@ export default {
 
   async execute(interaction) {
 
-    const top = await Level.find({ guildId: interaction.guild.id })
-      .sort({ level: -1, xp: -1 })
-      .limit(10);
+    const top = await Level.aggregate([
+      { $match: { guildId: interaction.guild.id } },
 
-    if (!top.length) return interaction.reply("No leveling data yet.");
+      // ✅ GROUP by userId so no duplicates can ever show
+      {
+        $group: {
+          _id: "$userId",
+          level: { $max: "$level" },
+
+          // If duplicates exist, take the best xp among them
+          xp: { $max: "$xp" }
+        }
+      },
+
+      { $sort: { level: -1, xp: -1 } },
+      { $limit: 10 }
+    ]);
+
+    if (!top.length) {
+      return interaction.reply("No leveling data yet.");
+    }
 
     const lines = top.map((u, i) =>
-      `**${i + 1}.** <@${u.userId}> — Level **${u.level}** (XP ${u.xp})`
+      `**${i + 1}.** <@${u._id}> — Level **${u.level}** (XP ${u.xp})`
     );
 
     const embed = new EmbedBuilder()
@@ -26,8 +42,7 @@ export default {
 
     return interaction.reply({
       embeds: [embed],
-      // If you don’t want pings here either, change to show tags instead.
-      allowedMentions: { parse: [] }
+      allowedMentions: { parse: [] } // ✅ prevents ping spam
     });
   }
 };
