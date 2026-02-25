@@ -12,7 +12,7 @@ const APPLICATION_REVIEW_CHANNEL_ID = "1475924505028333658";
 const LOG_CHANNEL_ID = "1475508584744747162";
 
 /* =======================================================
-   PANEL UPDATE FUNCTION (used when open/close)
+   PANEL UPDATE FUNCTION
 ======================================================= */
 export async function updatePanel(client, guildId, isOpen) {
   const config = await ApplicationConfig.findOne({ guildId });
@@ -49,7 +49,7 @@ export async function updatePanel(client, guildId, isOpen) {
 }
 
 /* =======================================================
-   MAIN INTERACTION HANDLER
+   MAIN SYSTEM
 ======================================================= */
 export default {
   name: "interactionCreate",
@@ -71,26 +71,41 @@ export default {
       if (!config)
         return interaction.reply({ content: "Application not configured.", ephemeral: true });
 
-      // Closed check
       if (!config.isOpen) {
         await interaction.reply({ content: "📩 Check your DMs.", ephemeral: true });
-
         return interaction.user.send(
           "❌ Sorry, this application is closed. Wait for it to be opened again."
         ).catch(() => {});
       }
 
-      // Prevent double application
-      const existing = await ApplicationSession.findOne({
+      // ❗ BLOCK if pending review exists
+      const pending = await ApplicationSession.findOne({
+        guildId: interaction.guild.id,
+        userId: interaction.user.id,
+        submitted: true,
+        reviewed: false
+      });
+
+      if (pending) {
+        return interaction.reply({
+          content: "❌ You already submitted an application. Please wait for staff review.",
+          ephemeral: true
+        });
+      }
+
+      // ❗ BLOCK if active unfinished session exists
+      const active = await ApplicationSession.findOne({
+        guildId: interaction.guild.id,
         userId: interaction.user.id,
         completed: false
       });
 
-      if (existing)
+      if (active) {
         return interaction.reply({
-          content: "❌ You already have an active application.",
+          content: "❌ You already have an application in progress.",
           ephemeral: true
         });
+      }
 
       await interaction.reply({ content: "📩 Check your DMs.", ephemeral: true });
 
@@ -99,7 +114,9 @@ export default {
         userId: interaction.user.id,
         answers: [],
         currentQuestion: 0,
-        completed: false
+        completed: false,
+        submitted: false,
+        reviewed: false
       });
 
       return interaction.user.send(
@@ -128,10 +145,7 @@ export default {
             `**Q${i + 1}:** ${a.question}\n**A:** ${a.answer}\n`
           ).join("\n")
         )
-        .addFields({
-          name: "Applicant",
-          value: `<@${session.userId}>`
-        })
+        .addFields({ name: "Applicant", value: `<@${session.userId}>` })
         .setTimestamp();
 
       const row = new ActionRowBuilder().addComponents(
@@ -151,6 +165,9 @@ export default {
       });
 
       session.completed = true;
+      session.submitted = true;
+      session.reviewed = false;
+
       await session.save();
 
       return interaction.reply({
@@ -178,16 +195,16 @@ export default {
 
       const decisionText = action === "accept" ? "accepted" : "declined";
 
-      // Notify applicant
       await applicant.send(
         action === "accept"
           ? "🎉 Your application has been accepted!"
           : "❌ Your application has been declined."
       ).catch(() => {});
 
-      // Log to main log channel
-      const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
+      session.reviewed = true;
+      await session.save();
 
+      const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
       if (logChannel) {
         logChannel.send(
           `📋 Application ${decisionText.toUpperCase()}\n` +
