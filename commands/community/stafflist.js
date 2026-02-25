@@ -7,7 +7,7 @@ export default {
 
   async execute(interaction) {
 
-    await interaction.deferReply(); // 🔥 important fix
+    await interaction.deferReply();
 
     const STAFF_ROLES = [
       "1461793438084239492",
@@ -19,7 +19,16 @@ export default {
       "1475872669344727201"
     ];
 
-    // Fetch members safely
+    // ❌ Roles that should NOT appear in the list
+    const EXCLUDED_ROLES = [
+      "1476271511718596770",
+      "1476271520090292270",
+      "1476271523831746580",
+      "1476271526767624223",
+      "1476271529682534461",
+      "1476271532643979326"
+    ];
+
     await interaction.guild.members.fetch();
 
     const embed = new EmbedBuilder()
@@ -32,6 +41,10 @@ export default {
     let totalStaff = 0;
 
     for (const roleId of STAFF_ROLES) {
+
+      // 🔥 Skip excluded roles
+      if (EXCLUDED_ROLES.includes(roleId)) continue;
+
       const role = interaction.guild.roles.cache.get(roleId);
       if (!role) continue;
 
