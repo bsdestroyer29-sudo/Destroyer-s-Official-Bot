@@ -9,8 +9,11 @@ import ApplicationSession from "../models/ApplicationSession.js";
 import ApplicationConfig from "../models/ApplicationConfig.js";
 
 function createProgressBar(current, total) {
-  const percent = Math.floor((current / total) * 10);
-  return "🟦".repeat(percent) + "⬜".repeat(10 - percent);
+  const progressBlocks = 10;
+  const filled = Math.round((current / total) * progressBlocks);
+  const empty = progressBlocks - filled;
+
+  return "▰".repeat(filled) + "▱".repeat(empty);
 }
 
 export default {
@@ -52,19 +55,27 @@ export default {
 
     session.currentQuestion += 1;
 
-    // If finished all questions
-    if (session.currentQuestion >= config.questions.length) {
+    const totalQuestions = config.questions.length;
+    const currentProgress = session.currentQuestion;
+
+    // ===============================
+    // FINISHED ALL QUESTIONS
+    // ===============================
+    if (currentProgress >= totalQuestions) {
 
       await session.save();
 
       const embed = new EmbedBuilder()
-        .setColor("Green")
-        .setTitle("✅ Application Complete")
+        .setColor("#2ecc71")
+        .setTitle("📝 Application Completed")
         .setDescription(
-          "You answered all questions.\n\nPress **Submit** when you're ready."
+          `━━━━━━━━━━━━━━━━━━\n\n` +
+          `You have answered **all ${totalQuestions} questions**.\n\n` +
+          `Click **Submit Application** when you're ready.\n\n` +
+          `━━━━━━━━━━━━━━━━━━`
         )
         .setFooter({
-          text: `Total Questions: ${config.questions.length}`
+          text: "Destroyer YT Application System"
         })
         .setTimestamp();
 
@@ -81,27 +92,30 @@ export default {
       });
     }
 
-    // Send next question styled
-    const nextQuestion = config.questions[session.currentQuestion];
+    // ===============================
+    // NEXT QUESTION
+    // ===============================
+    const nextQuestion = config.questions[currentProgress];
+
+    const percent = Math.floor((currentProgress / totalQuestions) * 100);
+    const progressBar = createProgressBar(currentProgress, totalQuestions);
 
     const embed = new EmbedBuilder()
-      .setColor("Blue")
+      .setColor("#5865F2")
       .setTitle(`📋 ${config.title}`)
       .setDescription(
-        `### Question ${session.currentQuestion + 1} / ${config.questions.length}\n\n` +
-        `**${nextQuestion}**`
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `**Question ${currentProgress + 1} / ${totalQuestions}**\n\n` +
+        `💬 ${nextQuestion}\n\n` +
+        `━━━━━━━━━━━━━━━━━━`
       )
       .addFields({
-        name: "Progress",
-        value:
-          createProgressBar(
-            session.currentQuestion,
-            config.questions.length
-          ) +
-          `\n${session.currentQuestion}/${config.questions.length}`
+        name: "📊 Progress",
+        value: `${progressBar}  ${percent}%`,
+        inline: false
       })
       .setFooter({
-        text: "Reply with your answer below."
+        text: "Reply below with your answer."
       })
       .setTimestamp();
 
