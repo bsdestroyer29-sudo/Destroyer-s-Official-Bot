@@ -1,11 +1,14 @@
 import {
   ContextMenuCommandBuilder,
   ApplicationCommandType,
-  PermissionFlagsBits
+  PermissionFlagsBits,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } from "discord.js";
 
 import ApplicationConfig from "../../models/ApplicationConfig.js";
-import { updatePanel } from "../../events/applicationSystem.js";
 
 export default {
   data: new ContextMenuCommandBuilder()
@@ -17,12 +20,41 @@ export default {
 
     await interaction.deferReply({ ephemeral: true });
 
-    await ApplicationConfig.findOneAndUpdate(
-      { guildId: interaction.guild.id },
-      { isOpen: false }
+    const targetMessage = interaction.targetMessage;
+
+    if (!targetMessage) {
+      return interaction.editReply("❌ Could not find target message.");
+    }
+
+    const config = await ApplicationConfig.findOne({
+      panelMessageId: targetMessage.id
+    });
+
+    if (!config) {
+      return interaction.editReply("❌ This message is not an application panel.");
+    }
+
+    config.isOpen = false;
+    await config.save();
+
+    const embed = new EmbedBuilder()
+      .setColor("Red")
+      .setTitle(config.title)
+      .setDescription(config.description)
+      .setFooter({ text: "Status: CLOSED" });
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("application_closed")
+        .setLabel("Closed")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true)
     );
 
-    await updatePanel(interaction.client, interaction.guild.id, false);
+    await targetMessage.edit({
+      embeds: [embed],
+      components: [row]
+    });
 
     return interaction.editReply("🔒 Applications are now CLOSED.");
   }
