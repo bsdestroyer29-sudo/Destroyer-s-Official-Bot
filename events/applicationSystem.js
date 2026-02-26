@@ -12,17 +12,17 @@ const APPLICATION_REVIEW_CHANNEL_ID = "1475924505028333658";
 const LOG_CHANNEL_ID = "1475508584744747162";
 
 /* =======================================================
-   PANEL UPDATE FUNCTION
+   PANEL UPDATE (BY PANEL MESSAGE ID)
 ======================================================= */
-export async function updatePanel(client, guildId, isOpen) {
-  const config = await ApplicationConfig.findOne({ guildId });
+export async function updatePanelByMessageId(client, panelMessageId, isOpen) {
+  const config = await ApplicationConfig.findOne({ panelMessageId });
   if (!config) return;
 
   const channel = await client.channels.fetch(config.panelChannelId).catch(() => null);
   if (!channel) return;
 
-  const message = await channel.messages.fetch(config.panelMessageId).catch(() => null);
-  if (!message) return;
+  const msg = await channel.messages.fetch(config.panelMessageId).catch(() => null);
+  if (!msg) return;
 
   const embed = new EmbedBuilder()
     .setColor(isOpen ? "Blue" : "Red")
@@ -38,14 +38,11 @@ export async function updatePanel(client, guildId, isOpen) {
       .setDisabled(!isOpen)
   );
 
-  await message.edit({
-    embeds: [embed],
-    components: [row]
-  }).catch(() => {});
+  await msg.edit({ embeds: [embed], components: [row] }).catch(() => {});
 }
 
 /* =======================================================
-   MAIN INTERACTION HANDLER
+   MAIN SYSTEM
 ======================================================= */
 export default {
   name: "interactionCreate",
@@ -55,18 +52,17 @@ export default {
 
     if (!interaction.isButton()) return;
 
-    /* ===============================
-       ENTRY BUTTON
-    =============================== */
+    // ===============================
+    // ENTRY BUTTON (MULTI PANEL SAFE)
+    // ===============================
     if (interaction.customId === "application_entry") {
 
-      const config = await ApplicationConfig.findOne({
-        guildId: interaction.guild.id
-      });
+      const panelMessageId = interaction.message?.id;
 
+      const config = await ApplicationConfig.findOne({ panelMessageId });
       if (!config) {
         return interaction.reply({
-          content: "❌ Application not configured.",
+          content: "❌ Application config not found for this panel. Re-run /application setup.",
           ephemeral: true
         });
       }
@@ -78,37 +74,36 @@ export default {
         });
       }
 
-      // 🔥 AUTO CLEAN unfinished sessions (prevents ghost block)
+      // ✅ CLEAN ONLY unfinished sessions for THIS panel
       await ApplicationSession.deleteMany({
         guildId: interaction.guild.id,
         userId: interaction.user.id,
+        panelMessageId: config.panelMessageId,
         submitted: false
       });
 
-      // BLOCK if already submitted & waiting review
+      // ✅ BLOCK only if submitted and waiting review for THIS panel
       const pending = await ApplicationSession.findOne({
         guildId: interaction.guild.id,
         userId: interaction.user.id,
+        panelMessageId: config.panelMessageId,
         submitted: true,
         reviewed: false
       });
 
       if (pending) {
         return interaction.reply({
-          content: "❌ You already submitted an application. Please wait for staff review.",
+          content: "❌ You already submitted this application. Please wait for staff review.",
           ephemeral: true
         });
       }
 
-      await interaction.reply({
-        content: "📩 Check your DMs.",
-        ephemeral: true
-      });
+      await interaction.reply({ content: "📩 Check your DMs.", ephemeral: true });
 
       await ApplicationSession.create({
         guildId: interaction.guild.id,
         userId: interaction.user.id,
-        panelMessageId: interaction.message.id,
+        panelMessageId: config.panelMessageId,
         answers: [],
         currentQuestion: 0,
         completed: false,
@@ -117,13 +112,13 @@ export default {
       });
 
       return interaction.user.send(
-        `📝 **Application Started**\n\nQuestion 1:\n${config.questions[0]}`
+        `📝 **${config.title}**\n\nQuestion 1:\n${config.questions[0]}`
       ).catch(() => {});
     }
 
-    /* ===============================
-       SUBMIT BUTTON
-    =============================== */
+    // ===============================
+    // SUBMIT BUTTON
+    // ===============================
     if (interaction.customId.startsWith("app_submit_")) {
 
       const sessionId = interaction.customId.split("_")[2];
@@ -131,14 +126,14 @@ export default {
 
       if (!session) {
         return interaction.update({
-          content: "❌ Session not found.",
+          content: "❌ This application session no longer exists.",
           components: []
         }).catch(() => {});
       }
 
       if (session.submitted === true) {
         return interaction.update({
-          content: "✅ Already submitted.",
+          content: "✅ You already submitted this application.",
           components: []
         }).catch(() => {});
       }
@@ -146,7 +141,7 @@ export default {
       const reviewChannel = client.channels.cache.get(APPLICATION_REVIEW_CHANNEL_ID);
       if (!reviewChannel) {
         return interaction.update({
-          content: "❌ Review channel not found.",
+          content: "❌ Review channel not found. Tell staff.",
           components: []
         }).catch(() => {});
       }
@@ -178,10 +173,7 @@ export default {
           .setStyle(ButtonStyle.Danger)
       );
 
-      await reviewChannel.send({
-        embeds: [embed],
-        components: [row]
-      });
+      await reviewChannel.send({ embeds: [embed], components: [row] });
 
       return interaction.update({
         content: "✅ Application submitted successfully.",
@@ -189,9 +181,9 @@ export default {
       }).catch(() => {});
     }
 
-    /* ===============================
-       ACCEPT / DECLINE
-    =============================== */
+    // ===============================
+    // ACCEPT / DECLINE
+    // ===============================
     if (
       interaction.customId.startsWith("app_accept_") ||
       interaction.customId.startsWith("app_decline_")
@@ -218,7 +210,6 @@ export default {
       await session.save();
 
       const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
-
       if (logChannel) {
         const reviewerText = `${interaction.user.tag} (${interaction.user.id})`;
         const applicantText = `${applicant.tag} (${applicant.id})`;
@@ -232,10 +223,7 @@ export default {
           )
           .setTimestamp();
 
-        logChannel.send({
-          embeds: [logEmbed],
-          allowedMentions: { parse: [] }
-        }).catch(() => {});
+        logChannel.send({ embeds: [logEmbed], allowedMentions: { parse: [] } }).catch(() => {});
       }
 
       return interaction.update({
