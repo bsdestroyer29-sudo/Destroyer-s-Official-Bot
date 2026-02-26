@@ -263,13 +263,17 @@ async function handleApplicationSubmit(interaction) {
   return interaction.editReply("✅ Submitted! Staff will review your application.");
 }
 
-// =================================================
-// INTERACTION HANDLER (SLASH + CONTEXT + BUTTONS)
-// =================================================
-client.on("interactionCreate", async interaction => {
+client.on("interactionCreate", async (interaction) => {
   try {
-    // ✅ BUTTONS (Entry + Submit)
+
+    // ======================
+    // BUTTONS
+    // ======================
     if (interaction.isButton()) {
+      console.log("🟦 BUTTON CLICK:", interaction.customId);
+
+      await interaction.deferReply({ ephemeral: true });
+
       if (interaction.customId === "application_entry") {
         return handleApplicationEntry(interaction);
       }
@@ -278,34 +282,34 @@ client.on("interactionCreate", async interaction => {
         return handleApplicationSubmit(interaction);
       }
 
-      return;
+      return interaction.editReply("⚠️ Unknown button.");
     }
 
-    // ✅ SLASH COMMANDS
+    // ======================
+    // SLASH COMMANDS
+    // ======================
     if (interaction.isChatInputCommand()) {
-      const cmd = client.commands.get(interaction.commandName);
-      if (!cmd) return;
-
-      await cmd.execute(interaction, client);
-      return;
+      const command = client.commands.get(interaction.commandName);
+      if (!command) return;
+      return await command.execute(interaction, client);
     }
 
-    // ✅ CONTEXT MENU COMMANDS (Message/User)
+    // ======================
+    // CONTEXT MENU
+    // ======================
     if (interaction.isContextMenuCommand()) {
-      const cmd = client.commands.get(interaction.commandName);
-      if (!cmd) return;
-
-      await cmd.execute(interaction, client);
-      return;
+      const command = client.commands.get(interaction.commandName);
+      if (!command) return;
+      return await command.execute(interaction, client);
     }
-  } catch (err) {
-    console.error("❌ Interaction error:", err);
 
-    // Always try to respond so it doesn't "think"
-    if (interaction?.deferred || interaction?.replied) {
-      await interaction.followUp({ content: "❌ Error executing this action.", ephemeral: true }).catch(() => {});
+  } catch (err) {
+    console.error("❌ interaction error:", err);
+
+    if (interaction.deferred || interaction.replied) {
+      await interaction.followUp({ content: "❌ Error.", ephemeral: true }).catch(() => {});
     } else {
-      await interaction.reply({ content: "❌ Error executing this action.", ephemeral: true }).catch(() => {});
+      await interaction.reply({ content: "❌ Error.", ephemeral: true }).catch(() => {});
     }
   }
 });
