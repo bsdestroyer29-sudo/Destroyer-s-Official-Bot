@@ -4,7 +4,8 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  PermissionFlagsBits
+  PermissionFlagsBits,
+  ChannelType
 } from "discord.js";
 
 import ApplicationConfig from "../../models/ApplicationConfig.js";
@@ -52,69 +53,94 @@ export default {
 
     const sub = interaction.options.getSubcommand();
 
-    // ========================
-    // SETUP
-    // ========================
+    /* =======================================================
+       SETUP
+    ======================================================= */
 
     if (sub === "setup") {
+      try {
+        const title = interaction.options.getString("title");
+        const description = interaction.options.getString("description");
+        const channel = interaction.options.getChannel("channel");
+        const questionsRaw = interaction.options.getString("questions");
 
-      const title = interaction.options.getString("title");
-      const description = interaction.options.getString("description");
-      const channel = interaction.options.getChannel("channel");
-      const questionsRaw = interaction.options.getString("questions");
+        if (!channel || channel.type !== ChannelType.GuildText) {
+          return interaction.editReply("Please select a text channel.");
+        }
 
-      const questions = questionsRaw.split("|").map(q => q.trim());
+        const questions = questionsRaw
+          .split("|")
+          .map(q => q.trim())
+          .filter(Boolean);
 
-      if (questions.length < 1 || questions.length > 10)
-        return interaction.editReply("Questions must be between 1 and 10.");
+        if (questions.length < 1 || questions.length > 10) {
+          return interaction.editReply("Questions must be between 1 and 10.");
+        }
 
-      const embed = new EmbedBuilder()
-        .setColor("Blue")
-        .setTitle(title)
-        .setDescription(description)
-        .setFooter({ text: "Status: OPEN" });
+        const embed = new EmbedBuilder()
+          .setColor("Blue")
+          .setTitle(title)
+          .setDescription(description)
+          .setFooter({ text: "Status: OPEN" });
 
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("application_entry")
-          .setLabel("Entry")
-          .setStyle(ButtonStyle.Primary)
-      );
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId("application_entry")
+            .setLabel("Entry")
+            .setStyle(ButtonStyle.Primary)
+        );
 
-      const panelMessage = await channel.send({
-        embeds: [embed],
-        components: [row]
-      });
+        const panelMessage = await channel.send({
+          embeds: [embed],
+          components: [row]
+        });
 
-      await ApplicationConfig.create({
-        guildId: interaction.guild.id,
-        panelChannelId: channel.id,
-        panelMessageId: panelMessage.id,
-        title,
-        description,
-        questions,
-        isOpen: true
-      });
+        await ApplicationConfig.findOneAndUpdate(
+          { guildId: interaction.guild.id },
+          {
+            guildId: interaction.guild.id,
+            panelChannelId: channel.id,
+            panelMessageId: panelMessage.id,
+            title,
+            description,
+            questions,
+            isOpen: true
+          },
+          { upsert: true }
+        );
 
-      return interaction.editReply("Application panel created.");
+        return interaction.editReply("✅ Application panel created successfully.");
+      } catch (err) {
+        console.error("Application setup error:", err);
+        return interaction.editReply("❌ Failed to create application panel.");
+      }
     }
 
-    // ========================
-    // CLOSE / OPEN
-    // ========================
+    /* =======================================================
+       CLOSE / OPEN
+    ======================================================= */
 
-    const replied = interaction.channel.messages.cache
-      .get(interaction.targetId || interaction.message?.reference?.messageId);
+    const repliedMessageId =
+      interaction.options.getMessage?.() ||
+      interaction.message?.reference?.messageId;
 
-    if (!replied)
+    if (!repliedMessageId) {
       return interaction.editReply("Reply to the application panel message.");
+    }
 
     const config = await ApplicationConfig.findOne({
-      panelMessageId: replied.id
+      panelMessageId: repliedMessageId.id || repliedMessageId
     });
 
-    if (!config)
+    if (!config) {
       return interaction.editReply("That message is not an application panel.");
+    }
+
+    const channel = await interaction.guild.channels.fetch(config.panelChannelId).catch(() => null);
+    if (!channel) return interaction.editReply("Panel channel not found.");
+
+    const panelMessage = await channel.messages.fetch(config.panelMessageId).catch(() => null);
+    if (!panelMessage) return interaction.editReply("Panel message not found.");
 
     if (sub === "close") {
       config.isOpen = false;
@@ -128,15 +154,15 @@ export default {
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId("application_closed")
+          .setCustomId("application_entry")
           .setLabel("Closed")
           .setStyle(ButtonStyle.Secondary)
           .setDisabled(true)
       );
 
-      await replied.edit({ embeds: [embed], components: [row] });
+      await panelMessage.edit({ embeds: [embed], components: [row] });
 
-      return interaction.editReply("Application closed.");
+      return interaction.editReply("🔒 Application closed.");
     }
 
     if (sub === "open") {
@@ -154,12 +180,12 @@ export default {
           .setCustomId("application_entry")
           .setLabel("Entry")
           .setStyle(ButtonStyle.Primary)
+          .setDisabled(false)
       );
 
-      await replied.edit({ embeds: [embed], components: [row] });
+      await panelMessage.edit({ embeds: [embed], components: [row] });
 
-      return interaction.editReply("Application opened.");
+      return interaction.editReply("🟢 Application opened.");
     }
-
   }
 };
