@@ -42,12 +42,9 @@ export async function updatePanelByMessageId(client, panelMessageId, isOpen) {
 }
 
 /* =======================================================
-   MAIN SYSTEM
+   MAIN SYSTEM - no name/once so loadEvents() skips it
 ======================================================= */
 export default {
-  name: "interactionCreate",
-  once: false,
-
   async execute(interaction, client) {
     if (!interaction.isButton()) return;
 
