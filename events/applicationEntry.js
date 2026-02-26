@@ -27,7 +27,7 @@ export default {
       return interaction.editReply("🔒 Sorry, this application is currently closed.").catch(() => {});
     }
 
-    // ✅ Clean up any stale unfinished sessions before starting a new one
+    // ✅ Clean up stale unfinished sessions
     await ApplicationSession.deleteMany({
       userId: interaction.user.id,
       panelMessageId: config.panelMessageId,
@@ -35,7 +35,7 @@ export default {
       submitted: false
     });
 
-    // ✅ Still block if they have a SUBMITTED application awaiting review
+    // ✅ Block if already submitted and awaiting review
     const pending = await ApplicationSession.findOne({
       userId: interaction.user.id,
       panelMessageId: config.panelMessageId,
@@ -47,30 +47,26 @@ export default {
       return interaction.editReply("❌ You already submitted this application. Please wait for staff review.").catch(() => {});
     }
 
-    // ✅ Atomic upsert - prevents double session creation from double clicks
-    const session = await ApplicationSession.findOneAndUpdate(
-      {
+    let session;
+    try {
+      session = await ApplicationSession.create({
         guildId: interaction.guild.id,
         userId: interaction.user.id,
         panelMessageId: config.panelMessageId,
+        currentQuestion: 0,
+        answers: [],
         completed: false,
-        submitted: false
-      },
-      {
-        $setOnInsert: {
-          guildId: interaction.guild.id,
-          userId: interaction.user.id,
-          panelMessageId: config.panelMessageId,
-          currentQuestion: 0,
-          answers: [],
-          completed: false,
-          submitted: false,
-          waitingForSubmit: false,
-          createdAt: new Date()
-        }
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
+        submitted: false,
+        waitingForSubmit: false
+      });
+    } catch (err) {
+      // ✅ Duplicate key error - another session was just created (double click)
+      if (err.code === 11000) {
+        return interaction.editReply("⚠️ Application already started. Check your DMs.").catch(() => {});
+      }
+      console.error("❌ Session create error:", err);
+      return interaction.editReply("❌ Something went wrong. Try again.").catch(() => {});
+    }
 
     const total = config.questions?.length || 1;
     const firstQuestion = config.questions?.[0] || "No question configured.";
