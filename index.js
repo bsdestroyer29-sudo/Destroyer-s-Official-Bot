@@ -15,11 +15,9 @@ import { fileURLToPath } from "url";
 
 dotenv.config();
 
-// ================= PATH FIX =================
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ================= ENV =================
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
@@ -30,7 +28,6 @@ if (!TOKEN || !CLIENT_ID || !GUILD_ID || !MONGO_URI) {
   process.exit(1);
 }
 
-// ================= CLIENT =================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -132,7 +129,6 @@ async function loadEvents(dir) {
 // SLASH COMMAND HANDLER
 // =================================================
 client.on("interactionCreate", async interaction => {
-
   if (!interaction.isChatInputCommand()) return;
 
   const command = client.commands.get(interaction.commandName);
@@ -152,6 +148,21 @@ client.on("interactionCreate", async interaction => {
       });
     }
   }
+});
+
+// =================================================
+// BUTTON HANDLER
+// =================================================
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isButton()) return;
+
+  // Application entry button
+  if (interaction.customId === "application_entry") {
+    const { default: applicationEntry } = await import("./events/applicationEntry.js");
+    return applicationEntry.run(interaction);
+  }
+
+  // Submit, Accept, Decline are handled by applicationSystem.js event listener
 });
 
 // =================================================
