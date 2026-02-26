@@ -85,6 +85,17 @@ export default {
         submitted: true,
         reviewed: false
       });
+      
+      // If unfinished session exists → delete it (allow restart)
+const active = await ApplicationSession.findOne({
+  guildId: interaction.guild.id,
+  userId: interaction.user.id,
+  submitted: false
+});
+
+if (active) {
+  await ApplicationSession.deleteOne({ _id: active._id });
+}
 
       if (pending) {
         return interaction.reply({
