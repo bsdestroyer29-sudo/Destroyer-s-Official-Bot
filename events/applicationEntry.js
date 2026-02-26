@@ -1,4 +1,4 @@
-import { Events, EmbedBuilder } from "discord.js";
+import { EmbedBuilder } from "discord.js";
 import ApplicationConfig from "../models/ApplicationConfig.js";
 import ApplicationSession from "../models/ApplicationSession.js";
 
@@ -8,34 +8,17 @@ function createProgressBar(current, total) {
 }
 
 export default {
-  name: Events.InteractionCreate,
-  once: false,
-
-  async execute(interaction, client) {
-    if (!interaction.isButton()) return;
-
-    // ✅ Make sure this matches your entry button customId
-    if (!interaction.customId.startsWith("application_entry")) return;
-
-    // ✅ IMPORTANT: prevent "thinking stuck"
-    await interaction.deferReply({ ephemeral: true });
-
-    const guild = interaction.guild;
-    if (!guild) return interaction.editReply("❌ This can only be used in a server.");
-
-    // Find panel config by the message that has the button (the panel message)
+  // called by interactionRouter
+  async run(interaction) {
     const panelMessageId = interaction.message?.id;
-    const config = await ApplicationConfig.findOne({ panelMessageId });
 
-    if (!config) {
-      return interaction.editReply("❌ Panel config not found. Ask staff to re-run setup.");
-    }
+    const config = await ApplicationConfig.findOne({ panelMessageId });
+    if (!config) return interaction.editReply("❌ Panel config not found. Re-run setup.");
 
     if (!config.isOpen) {
-      return interaction.editReply("🔒 Sorry, this application is closed right now.");
+      return interaction.editReply("🔒 Sorry, this application is closed.");
     }
 
-    // Prevent multi-sessions spam
     const existing = await ApplicationSession.findOne({
       userId: interaction.user.id,
       panelMessageId: config.panelMessageId,
@@ -43,12 +26,11 @@ export default {
     });
 
     if (existing) {
-      return interaction.editReply("⚠️ You already have an application in progress. Check your DMs.");
+      return interaction.editReply("⚠️ You already started this application. Check your DMs.");
     }
 
-    // Create new session
     const session = await ApplicationSession.create({
-      guildId: guild.id,
+      guildId: interaction.guild.id,
       userId: interaction.user.id,
       panelMessageId: config.panelMessageId,
       currentQuestion: 0,
@@ -57,32 +39,30 @@ export default {
       waitingForSubmit: false
     });
 
-    // Send first question in DM (stylish embed)
-    const firstQuestion = config.questions[0];
+    const total = config.questions.length || 1;
+    const firstQ = config.questions[0] || "No question found.";
 
     const embed = new EmbedBuilder()
       .setColor("#5865F2")
-      .setTitle(`📝 ${config.title}`)
+      .setTitle(`📝 ${config.title || "Application"}`)
       .setDescription(
         `**Application Started**\n\n` +
-        `### Question 1 / ${config.questions.length}\n` +
-        `**${firstQuestion}**`
+        `### Question 1 / ${total}\n` +
+        `**${firstQ}**`
       )
       .addFields({
         name: "Progress",
-        value: `${createProgressBar(0, config.questions.length)}\n0/${config.questions.length}`
+        value: `${createProgressBar(0, total)}\n0/${total}`
       })
-      .setFooter({ text: "Reply in this DM with your answer." });
+      .setFooter({ text: "Reply in this DM with your answer." })
+      .setTimestamp();
 
     try {
       await interaction.user.send({ embeds: [embed] });
-      await interaction.editReply("✅ Check your DMs — I sent your first question.");
+      return interaction.editReply("✅ Check your DMs — I sent the first question.");
     } catch {
-      // ✅ If user has DMs closed, don't hang
       await ApplicationSession.deleteOne({ _id: session._id }).catch(() => {});
-      await interaction.editReply(
-        "❌ I couldn’t DM you.\nPlease enable DMs from server members and press **Entry** again."
-      );
+      return interaction.editReply("❌ I can’t DM you. Enable DMs and press Entry again.");
     }
   }
 };
