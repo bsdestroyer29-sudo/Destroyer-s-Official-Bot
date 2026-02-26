@@ -24,7 +24,7 @@ export async function updatePanel(client, guildId, isOpen) {
   const messages = await channel.messages.fetch({ limit: 20 });
 
   const panelMessage = messages.find(m =>
-    m.components[0]?.components[0]?.customId === "application_entry"
+    m.components?.[0]?.components?.[0]?.customId === "application_entry"
   );
 
   if (!panelMessage) return;
@@ -45,7 +45,7 @@ export async function updatePanel(client, guildId, isOpen) {
   await panelMessage.edit({
     embeds: [newEmbed],
     components: [row]
-  });
+  }).catch(() => {});
 }
 
 /* =======================================================
@@ -78,7 +78,7 @@ export default {
         ).catch(() => {});
       }
 
-      // ❗ BLOCK if pending review exists
+      // Block if pending review exists
       const pending = await ApplicationSession.findOne({
         guildId: interaction.guild.id,
         userId: interaction.user.id,
@@ -93,7 +93,7 @@ export default {
         });
       }
 
-      // ❗ BLOCK if active unfinished session exists
+      // Block if active unfinished session exists
       const active = await ApplicationSession.findOne({
         guildId: interaction.guild.id,
         userId: interaction.user.id,
@@ -121,11 +121,11 @@ export default {
 
       return interaction.user.send(
         `📝 **Application Started**\n\nQuestion 1:\n${config.questions[0]}`
-      );
+      ).catch(() => {});
     }
 
     /* ===============================
-       SUBMIT BUTTON (ANTI-SPAM FIX)
+       SUBMIT BUTTON
     =============================== */
     if (interaction.customId.startsWith("app_submit_")) {
 
@@ -133,14 +133,13 @@ export default {
       const session = await ApplicationSession.findById(sessionId);
 
       if (!session) {
-        // Remove button anyway if session missing
         return interaction.update({
           content: "❌ This application session no longer exists.",
           components: []
         }).catch(() => {});
       }
 
-      // ✅ HARD STOP: already submitted (prevents infinite spam)
+      // Prevent double submit
       if (session.submitted === true) {
         return interaction.update({
           content: "✅ You already submitted this application.",
@@ -151,12 +150,12 @@ export default {
       const reviewChannel = client.channels.cache.get(APPLICATION_REVIEW_CHANNEL_ID);
       if (!reviewChannel) {
         return interaction.update({
-          content: "❌ Review channel not found. Tell staff.",
+          content: "❌ Review channel not found.",
           components: []
         }).catch(() => {});
       }
 
-      // ✅ Mark as submitted BEFORE sending (prevents double-submit race)
+      // Mark submitted BEFORE sending (anti-race)
       session.completed = true;
       session.submitted = true;
       session.reviewed = false;
@@ -189,7 +188,6 @@ export default {
         components: [row]
       });
 
-      // ✅ UI FIX: remove submit button so it can’t be clicked again
       return interaction.update({
         content: "✅ Application submitted successfully.",
         components: []
@@ -215,6 +213,7 @@ export default {
 
       const decisionText = action === "accept" ? "accepted" : "declined";
 
+      // Notify applicant
       await applicant.send(
         action === "accept"
           ? "🎉 Your application has been accepted!"
@@ -224,28 +223,35 @@ export default {
       session.reviewed = true;
       await session.save();
 
-const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
+      /* ===============================
+         LOG FIXED VERSION
+      =============================== */
+      const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
 
-if (logChannel) {
-  const reviewerText = `${interaction.user.tag} (${interaction.user.id})`;
+      if (logChannel) {
+        const reviewerText = `${interaction.user.tag} (${interaction.user.id})`;
+        const applicantText = `${applicant.tag} (${applicant.id})`;
 
-  const logEmbed = new EmbedBuilder()
-    .setColor(action === "accept" ? "Green" : "Red")
-    .setTitle(`📋 Application ${decisionText.toUpperCase()}`)
-    .addFields(
-      { name: "Applicant", value: applicantText },
-      { name: "Reviewed By", value: reviewerText }
-    )
-    .setTimestamp();
+        const logEmbed = new EmbedBuilder()
+          .setColor(action === "accept" ? "Green" : "Red")
+          .setTitle(`📋 Application ${decisionText.toUpperCase()}`)
+          .addFields(
+            { name: "Applicant", value: applicantText },
+            { name: "Reviewed By", value: reviewerText }
+          )
+          .setTimestamp();
 
-  logChannel.send({ embeds: [logEmbed], allowedMentions: { parse: [] } });
-}
+        logChannel.send({
+          embeds: [logEmbed],
+          allowedMentions: { parse: [] }
+        }).catch(() => {});
+      }
 
-      await interaction.update({
+      return interaction.update({
         content: `Application ${decisionText} by ${interaction.user.tag}`,
         embeds: interaction.message.embeds,
         components: []
-      });
+      }).catch(() => {});
     }
   }
 };
