@@ -109,15 +109,16 @@ export default {
 
       await interaction.reply({ content: "📩 Check your DMs.", ephemeral: true });
 
-      await ApplicationSession.create({
-        guildId: interaction.guild.id,
-        userId: interaction.user.id,
-        answers: [],
-        currentQuestion: 0,
-        completed: false,
-        submitted: false,
-        reviewed: false
-      });
+await ApplicationSession.create({
+  guildId: interaction.guild.id,
+  userId: interaction.user.id,
+  panelMessageId: interaction.message.id, // 🔥 CRITICAL FIX
+  answers: [],
+  currentQuestion: 0,
+  completed: false,
+  submitted: false,
+  reviewed: false
+});
 
       return interaction.user.send(
         `📝 **Application Started**\n\nQuestion 1:\n${config.questions[0]}`
