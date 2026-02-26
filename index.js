@@ -151,6 +151,31 @@ client.on("interactionCreate", async interaction => {
 });
 
 // =================================================
+// CONTEXT MENU HANDLER
+// =================================================
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isMessageContextMenuCommand()) return;
+
+  const command = client.commands.get(interaction.commandName);
+  if (!command) return;
+
+  try {
+    await command.execute(interaction, client);
+  } catch (err) {
+    console.error("❌ Context menu error:", err);
+
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply("❌ Error executing command.");
+    } else {
+      await interaction.reply({
+        content: "❌ Error executing command.",
+        ephemeral: true
+      });
+    }
+  }
+});
+
+// =================================================
 // BUTTON HANDLER
 // =================================================
 client.on("interactionCreate", async interaction => {
