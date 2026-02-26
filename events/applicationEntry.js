@@ -11,7 +11,6 @@ export default {
   async run(interaction) {
     if (!interaction.isButton()) return;
 
-    // ✅ Defer first so Discord doesn't time out
     await interaction.deferReply({ ephemeral: true }).catch(() => {});
 
     const panelMessageId = interaction.message?.id;
@@ -28,15 +27,24 @@ export default {
       return interaction.editReply("🔒 Sorry, this application is currently closed.").catch(() => {});
     }
 
-    const existing = await ApplicationSession.findOne({
+    // ✅ Clean up any stale unfinished sessions before starting a new one
+    await ApplicationSession.deleteMany({
       userId: interaction.user.id,
       panelMessageId: config.panelMessageId,
       completed: false,
       submitted: false
     });
 
-    if (existing) {
-      return interaction.editReply("⚠️ You already started this application. Check your DMs.").catch(() => {});
+    // ✅ Still block if they have a SUBMITTED application awaiting review
+    const pending = await ApplicationSession.findOne({
+      userId: interaction.user.id,
+      panelMessageId: config.panelMessageId,
+      submitted: true,
+      reviewed: false
+    });
+
+    if (pending) {
+      return interaction.editReply("❌ You already submitted this application. Please wait for staff review.").catch(() => {});
     }
 
     const session = await ApplicationSession.create({
