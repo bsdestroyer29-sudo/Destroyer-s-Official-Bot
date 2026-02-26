@@ -16,7 +16,6 @@ export default {
   name: "messageCreate",
   once: false,
   async execute(message) {
-    // Only DMs
     if (message.guild) return;
     if (message.author.bot) return;
 
@@ -56,13 +55,11 @@ export default {
       ).catch(() => {});
     }
 
-    // If finished questions and waiting for submit, ignore extra messages
     if (session.waitingForSubmit) return;
 
     const total = config.questions.length;
     const idx = session.currentQuestion;
 
-    // Safety guard
     if (idx >= total) {
       session.waitingForSubmit = true;
       await session.save().catch(() => {});
@@ -71,17 +68,19 @@ export default {
 
     const questionText = config.questions[idx];
 
-    // Save answer
     session.answers.push({
       question: questionText,
       answer: message.content
     });
     session.currentQuestion += 1;
 
-    // Finished all questions -> show Submit button ONCE
+    // ✅ Finished all questions -> atomic lock prevents double submit screen
     if (session.currentQuestion >= total) {
-      session.waitingForSubmit = true;
-      await session.save().catch(() => {});
+      const locked = await ApplicationSession.findOneAndUpdate(
+        { _id: session._id, waitingForSubmit: false },
+        { $set: { waitingForSubmit: true, answers: session.answers } }
+      );
+      if (!locked) return; // another event already sent the submit screen
 
       const doneEmbed = new EmbedBuilder()
         .setColor("Green")
