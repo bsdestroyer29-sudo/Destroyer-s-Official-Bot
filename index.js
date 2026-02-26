@@ -266,46 +266,58 @@ async function handleApplicationSubmit(interaction) {
 client.on("interactionCreate", async (interaction) => {
   try {
 
-    // ======================
-    // BUTTONS
-    // ======================
+client.on("interactionCreate", async (interaction) => {
+  try {
+    // =========================
+    // ✅ BUTTONS (STOP THINKING)
+    // =========================
     if (interaction.isButton()) {
+      // ALWAYS ACK FAST (no more "thinking")
+      await interaction.deferReply({ ephemeral: true }).catch(() => {});
+
+      // Debug: show the real customId so we match it
       console.log("🟦 BUTTON CLICK:", interaction.customId);
 
-      await interaction.deferReply({ ephemeral: true });
-
-      if (interaction.customId === "application_entry") {
+      // ✅ Entry button (match multiple possibilities)
+      if (
+        interaction.customId === "application_entry" ||
+        interaction.customId.startsWith("application_entry") ||
+        interaction.customId.startsWith("app_entry") ||
+        interaction.customId.startsWith("entry")
+      ) {
         return handleApplicationEntry(interaction);
       }
 
+      // ✅ Submit button
       if (interaction.customId.startsWith("app_submit_")) {
         return handleApplicationSubmit(interaction);
       }
 
-      return interaction.editReply("⚠️ Unknown button.");
+      // Unknown button still replies (so nobody gets stuck)
+      return interaction.editReply("✅ Button received. (Not linked to a handler)").catch(() => {});
     }
 
-    // ======================
-    // SLASH COMMANDS
-    // ======================
+    // =========================
+    // ✅ SLASH COMMANDS
+    // =========================
     if (interaction.isChatInputCommand()) {
       const command = client.commands.get(interaction.commandName);
       if (!command) return;
       return await command.execute(interaction, client);
     }
 
-    // ======================
-    // CONTEXT MENU
-    // ======================
+    // =========================
+    // ✅ CONTEXT MENU COMMANDS
+    // =========================
     if (interaction.isContextMenuCommand()) {
       const command = client.commands.get(interaction.commandName);
       if (!command) return;
       return await command.execute(interaction, client);
     }
-
   } catch (err) {
-    console.error("❌ interaction error:", err);
+    console.error("❌ interactionCreate error:", err);
 
+    // Always respond so Discord never "thinks"
     if (interaction.deferred || interaction.replied) {
       await interaction.followUp({ content: "❌ Error.", ephemeral: true }).catch(() => {});
     } else {
