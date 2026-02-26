@@ -47,15 +47,30 @@ export default {
       return interaction.editReply("❌ You already submitted this application. Please wait for staff review.").catch(() => {});
     }
 
-    const session = await ApplicationSession.create({
-      guildId: interaction.guild.id,
-      userId: interaction.user.id,
-      panelMessageId: config.panelMessageId,
-      currentQuestion: 0,
-      answers: [],
-      completed: false,
-      waitingForSubmit: false
-    });
+    // ✅ Atomic upsert - prevents double session creation from double clicks
+    const session = await ApplicationSession.findOneAndUpdate(
+      {
+        guildId: interaction.guild.id,
+        userId: interaction.user.id,
+        panelMessageId: config.panelMessageId,
+        completed: false,
+        submitted: false
+      },
+      {
+        $setOnInsert: {
+          guildId: interaction.guild.id,
+          userId: interaction.user.id,
+          panelMessageId: config.panelMessageId,
+          currentQuestion: 0,
+          answers: [],
+          completed: false,
+          submitted: false,
+          waitingForSubmit: false,
+          createdAt: new Date()
+        }
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
 
     const total = config.questions?.length || 1;
     const firstQuestion = config.questions?.[0] || "No question configured.";
