@@ -156,13 +156,19 @@ client.on("interactionCreate", async interaction => {
 client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
 
-  // Application entry button
   if (interaction.customId === "application_entry") {
     const { default: applicationEntry } = await import("./events/applicationEntry.js");
     return applicationEntry.run(interaction);
   }
 
-  // Submit, Accept, Decline are handled by applicationSystem.js event listener
+  if (
+    interaction.customId.startsWith("app_submit_") ||
+    interaction.customId.startsWith("app_accept_") ||
+    interaction.customId.startsWith("app_decline_")
+  ) {
+    const { default: applicationSystem } = await import("./events/applicationSystem.js");
+    return applicationSystem.execute(interaction, client);
+  }
 });
 
 // =================================================
