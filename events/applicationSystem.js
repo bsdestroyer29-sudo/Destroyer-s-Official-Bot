@@ -21,35 +21,31 @@ export async function updatePanel(client, guildId, isOpen) {
   const channel = await client.channels.fetch(config.panelChannelId).catch(() => null);
   if (!channel) return;
 
-  const messages = await channel.messages.fetch({ limit: 20 });
+  const message = await channel.messages.fetch(config.panelMessageId).catch(() => null);
+  if (!message) return;
 
-  const panelMessage = messages.find(m =>
-    m.components?.[0]?.components?.[0]?.customId === "application_entry"
-  );
-
-  if (!panelMessage) return;
-
-  const newEmbed = new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setColor(isOpen ? "Blue" : "Red")
-    .setTitle(isOpen ? config.title : `🔒 CLOSED — ${config.title}`)
-    .setDescription(config.description);
+    .setTitle(config.title)
+    .setDescription(config.description)
+    .setFooter({ text: `Status: ${isOpen ? "OPEN" : "CLOSED"}` });
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("application_entry")
       .setLabel(isOpen ? "Entry" : "Closed")
-      .setStyle(isOpen ? ButtonStyle.Success : ButtonStyle.Secondary)
+      .setStyle(isOpen ? ButtonStyle.Primary : ButtonStyle.Secondary)
       .setDisabled(!isOpen)
   );
 
-  await panelMessage.edit({
-    embeds: [newEmbed],
+  await message.edit({
+    embeds: [embed],
     components: [row]
   }).catch(() => {});
 }
 
 /* =======================================================
-   MAIN SYSTEM
+   MAIN INTERACTION HANDLER
 ======================================================= */
 export default {
   name: "interactionCreate",
@@ -68,34 +64,27 @@ export default {
         guildId: interaction.guild.id
       });
 
-      if (!config)
-        return interaction.reply({ content: "Application not configured.", ephemeral: true });
-
-      if (!config.isOpen) {
-        await interaction.reply({ content: "📩 Check your DMs.", ephemeral: true });
-        return interaction.user.send(
-          "❌ Sorry, this application is closed. Wait for it to be opened again."
-        ).catch(() => {});
+      if (!config) {
+        return interaction.reply({
+          content: "❌ Application not configured.",
+          ephemeral: true
+        });
       }
 
-      // Block if pending review exists
+      if (!config.isOpen) {
+        return interaction.reply({
+          content: "🔒 Applications are currently closed.",
+          ephemeral: true
+        });
+      }
+
+      // BLOCK only if already submitted and waiting review
       const pending = await ApplicationSession.findOne({
         guildId: interaction.guild.id,
         userId: interaction.user.id,
         submitted: true,
         reviewed: false
       });
-      
-      // If unfinished session exists → delete it (allow restart)
-const active = await ApplicationSession.findOne({
-  guildId: interaction.guild.id,
-  userId: interaction.user.id,
-  submitted: false
-});
-
-if (active) {
-  await ApplicationSession.deleteOne({ _id: active._id });
-}
 
       if (pending) {
         return interaction.reply({
@@ -104,25 +93,28 @@ if (active) {
         });
       }
 
-      // Block if active unfinished session exists
-      const active = await ApplicationSession.findOne({
+      // DELETE any unfinished session (allow restart)
+      await ApplicationSession.deleteMany({
         guildId: interaction.guild.id,
         userId: interaction.user.id,
-        completed: false
+        submitted: false
       });
 
-      await interaction.reply({ content: "📩 Check your DMs.", ephemeral: true });
+      await interaction.reply({
+        content: "📩 Check your DMs.",
+        ephemeral: true
+      });
 
-await ApplicationSession.create({
-  guildId: interaction.guild.id,
-  userId: interaction.user.id,
-  panelMessageId: interaction.message.id, // 🔥 CRITICAL FIX
-  answers: [],
-  currentQuestion: 0,
-  completed: false,
-  submitted: false,
-  reviewed: false
-});
+      await ApplicationSession.create({
+        guildId: interaction.guild.id,
+        userId: interaction.user.id,
+        panelMessageId: interaction.message.id,
+        answers: [],
+        currentQuestion: 0,
+        completed: false,
+        submitted: false,
+        reviewed: false
+      });
 
       return interaction.user.send(
         `📝 **Application Started**\n\nQuestion 1:\n${config.questions[0]}`
@@ -139,15 +131,14 @@ await ApplicationSession.create({
 
       if (!session) {
         return interaction.update({
-          content: "❌ This application session no longer exists.",
+          content: "❌ This session no longer exists.",
           components: []
         }).catch(() => {});
       }
 
-      // Prevent double submit
       if (session.submitted === true) {
         return interaction.update({
-          content: "✅ You already submitted this application.",
+          content: "✅ Already submitted.",
           components: []
         }).catch(() => {});
       }
@@ -160,7 +151,7 @@ await ApplicationSession.create({
         }).catch(() => {});
       }
 
-      // Mark submitted BEFORE sending (anti-race)
+      // Mark as submitted BEFORE sending (anti-race)
       session.completed = true;
       session.submitted = true;
       session.reviewed = false;
@@ -218,7 +209,6 @@ await ApplicationSession.create({
 
       const decisionText = action === "accept" ? "accepted" : "declined";
 
-      // Notify applicant
       await applicant.send(
         action === "accept"
           ? "🎉 Your application has been accepted!"
@@ -228,9 +218,6 @@ await ApplicationSession.create({
       session.reviewed = true;
       await session.save();
 
-      /* ===============================
-         LOG FIXED VERSION
-      =============================== */
       const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
 
       if (logChannel) {
