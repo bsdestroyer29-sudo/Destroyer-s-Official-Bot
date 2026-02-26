@@ -18,44 +18,53 @@ export default {
 
   async execute(interaction) {
 
-    await interaction.deferReply({ ephemeral: true });
+    try {
 
-    const targetMessage = interaction.targetMessage;
+      await interaction.deferReply({ ephemeral: true });
 
-    if (!targetMessage) {
-      return interaction.editReply("❌ Could not find target message.");
+      const targetMessage = interaction.targetMessage;
+      if (!targetMessage)
+        return interaction.editReply("❌ Target message not found.");
+
+      const config = await ApplicationConfig.findOne({
+        panelMessageId: targetMessage.id
+      });
+
+      if (!config)
+        return interaction.editReply("❌ Panel config not found.");
+
+      config.isOpen = false;
+      await config.save();
+
+      const embed = new EmbedBuilder()
+        .setColor("Red")
+        .setTitle(`🔒 CLOSED — ${config.title}`)
+        .setDescription(config.description);
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("application_closed")
+          .setLabel("Closed")
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(true)
+      );
+
+      await targetMessage.edit({
+        embeds: [embed],
+        components: [row]
+      });
+
+      return interaction.editReply("🔒 Applications are now CLOSED.");
+
+    } catch (error) {
+
+      console.error("Close Application Error:", error);
+
+      if (!interaction.replied)
+        await interaction.reply({
+          content: "❌ Something went wrong.",
+          ephemeral: true
+        });
     }
-
-    const config = await ApplicationConfig.findOne({
-      panelMessageId: targetMessage.id
-    });
-
-    if (!config) {
-      return interaction.editReply("❌ This message is not an application panel.");
-    }
-
-    config.isOpen = false;
-    await config.save();
-
-    const embed = new EmbedBuilder()
-      .setColor("Red")
-      .setTitle(config.title)
-      .setDescription(config.description)
-      .setFooter({ text: "Status: CLOSED" });
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("application_closed")
-        .setLabel("Closed")
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(true)
-    );
-
-    await targetMessage.edit({
-      embeds: [embed],
-      components: [row]
-    });
-
-    return interaction.editReply("🔒 Applications are now CLOSED.");
   }
 };
