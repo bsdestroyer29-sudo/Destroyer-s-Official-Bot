@@ -4,7 +4,6 @@ import {
   ButtonBuilder,
   ButtonStyle
 } from "discord.js";
-
 import ApplicationSession from "../models/ApplicationSession.js";
 import ApplicationConfig from "../models/ApplicationConfig.js";
 
@@ -16,29 +15,34 @@ function createProgressBar(current, total) {
 export default {
   name: "messageCreate",
   once: false,
-
   async execute(message) {
-
     // Only DMs
     if (message.guild) return;
     if (message.author.bot) return;
 
-    // ✅ ALWAYS get the newest active session (prevents panel mixing)
-    const session = await ApplicationSession.findOne({
+    // Get all active sessions for this user
+    const sessions = await ApplicationSession.find({
       userId: message.author.id,
       completed: false,
       submitted: false,
       reviewed: false
     }).sort({ createdAt: -1 });
 
-    if (!session) return;
+    if (!sessions.length) return;
+
+    // ✅ If duplicates exist, delete all but the newest
+    if (sessions.length > 1) {
+      const idsToDelete = sessions.slice(1).map(s => s._id);
+      await ApplicationSession.deleteMany({ _id: { $in: idsToDelete } });
+    }
+
+    const session = sessions[0];
 
     const config = await ApplicationConfig.findOne({
       panelMessageId: session.panelMessageId
     });
 
     if (!config) {
-      // Stop this session so it can’t keep breaking / mixing
       session.completed = true;
       await session.save().catch(() => {});
       return message.author.send(
@@ -58,7 +62,7 @@ export default {
     const total = config.questions.length;
     const idx = session.currentQuestion;
 
-    // Safety guard (shouldn't happen, but keeps it stable)
+    // Safety guard
     if (idx >= total) {
       session.waitingForSubmit = true;
       await session.save().catch(() => {});
@@ -72,7 +76,6 @@ export default {
       question: questionText,
       answer: message.content
     });
-
     session.currentQuestion += 1;
 
     // Finished all questions -> show Submit button ONCE
