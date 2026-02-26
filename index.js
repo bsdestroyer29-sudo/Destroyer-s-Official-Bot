@@ -1,4 +1,12 @@
-import { Client, GatewayIntentBits, Collection, REST, Routes, Partials } from "discord.js";
+import {
+  Client,
+  GatewayIntentBits,
+  Collection,
+  REST,
+  Routes,
+  Partials
+} from "discord.js";
+
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import fs from "fs";
@@ -7,11 +15,11 @@ import { fileURLToPath } from "url";
 
 dotenv.config();
 
-// ===== PATH FIX =====
+// ================= PATH FIX =================
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ===== ENV =====
+// ================= ENV =================
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
@@ -22,7 +30,7 @@ if (!TOKEN || !CLIENT_ID || !GUILD_ID || !MONGO_URI) {
   process.exit(1);
 }
 
-// ===== CLIENT =====
+// ================= CLIENT =================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -42,7 +50,11 @@ const client = new Client({
     GatewayIntentBits.DirectMessageTyping,
     GatewayIntentBits.MessageContent
   ],
-  partials: [Partials.Channel, Partials.Message, Partials.Reaction]
+  partials: [
+    Partials.Channel,
+    Partials.Message,
+    Partials.Reaction
+  ]
 });
 
 client.commands = new Collection();
@@ -57,6 +69,7 @@ async function loadCommands(dir) {
   if (!fs.existsSync(dir)) return;
 
   const entries = fs.readdirSync(dir);
+
   for (const entry of entries) {
     const fullPath = path.join(dir, entry);
     const stat = fs.lstatSync(fullPath);
@@ -68,15 +81,15 @@ async function loadCommands(dir) {
 
     if (!entry.endsWith(".js")) continue;
 
-    const cmd = (await import(`file://${fullPath}`)).default;
+    const command = (await import(`file://${fullPath}`)).default;
 
-    if (!cmd?.data?.name) {
+    if (!command?.data?.name) {
       console.warn(`⚠️ Skipping invalid command file: ${fullPath}`);
       continue;
     }
 
-    client.commands.set(cmd.data.name, cmd);
-    commands.push(cmd.data.toJSON());
+    client.commands.set(command.data.name, command);
+    commands.push(command.data.toJSON());
   }
 }
 
@@ -89,6 +102,7 @@ async function loadEvents(dir) {
   if (!fs.existsSync(dir)) return;
 
   const entries = fs.readdirSync(dir);
+
   for (const entry of entries) {
     const fullPath = path.join(dir, entry);
     const stat = fs.lstatSync(fullPath);
@@ -100,17 +114,45 @@ async function loadEvents(dir) {
 
     if (!entry.endsWith(".js")) continue;
 
-    const ev = (await import(`file://${fullPath}`)).default;
+    const event = (await import(`file://${fullPath}`)).default;
 
-    if (!ev?.name || typeof ev.execute !== "function") {
+    if (!event?.name || typeof event.execute !== "function") {
       console.warn(`⚠️ Skipping invalid event file: ${fullPath}`);
       continue;
     }
 
-    if (ev.once) client.once(ev.name, (...args) => ev.execute(...args, client));
-    else client.on(ev.name, (...args) => ev.execute(...args, client));
+    if (event.once)
+      client.once(event.name, (...args) => event.execute(...args, client));
+    else
+      client.on(event.name, (...args) => event.execute(...args, client));
   }
 }
+
+// =================================================
+// SLASH COMMAND HANDLER
+// =================================================
+client.on("interactionCreate", async interaction => {
+
+  if (!interaction.isChatInputCommand()) return;
+
+  const command = client.commands.get(interaction.commandName);
+  if (!command) return;
+
+  try {
+    await command.execute(interaction, client);
+  } catch (err) {
+    console.error("❌ Slash command error:", err);
+
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply("❌ Error executing command.");
+    } else {
+      await interaction.reply({
+        content: "❌ Error executing command.",
+        ephemeral: true
+      });
+    }
+  }
+});
 
 // =================================================
 // REGISTER SLASH COMMANDS (GUILD)
@@ -120,7 +162,10 @@ async function registerCommands() {
 
   try {
     console.log("🔄 Registering slash commands...");
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      { body: commands }
+    );
     console.log("✅ Slash commands registered.");
   } catch (err) {
     console.error("❌ Slash registration error:", err);
@@ -145,7 +190,7 @@ async function connectMongo() {
 // =================================================
 client.once("ready", () => {
   console.log(`🤖 Logged in as ${client.user.tag}`);
-  console.log("✅ BUILD: Events Router Active");
+  console.log("🚀 Bot fully operational.");
 });
 
 // =================================================
