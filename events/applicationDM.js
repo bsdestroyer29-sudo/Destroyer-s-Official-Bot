@@ -18,14 +18,18 @@ export default {
   once: false,
 
   async execute(message) {
+
     // Only DMs
     if (message.guild) return;
     if (message.author.bot) return;
 
+    // ✅ ALWAYS get the newest active session (prevents panel mixing)
     const session = await ApplicationSession.findOne({
       userId: message.author.id,
-      completed: false
-    });
+      completed: false,
+      submitted: false,
+      reviewed: false
+    }).sort({ createdAt: -1 });
 
     if (!session) return;
 
@@ -34,25 +38,30 @@ export default {
     });
 
     if (!config) {
-      return message.author.send("❌ Application config not found. Ask staff to re-run setup.");
+      // Stop this session so it can’t keep breaking / mixing
+      session.completed = true;
+      await session.save().catch(() => {});
+      return message.author.send(
+        "❌ Application config not found. Ask staff to re-run setup."
+      ).catch(() => {});
     }
 
     if (!config.isOpen) {
-      return message.author.send("🔒 Sorry, this application is closed. Wait for it to be opened again.");
+      return message.author.send(
+        "🔒 Sorry, this application is closed. Wait for it to be opened again."
+      ).catch(() => {});
     }
 
     // If finished questions and waiting for submit, ignore extra messages
-    if (session.waitingForSubmit) {
-      return;
-    }
+    if (session.waitingForSubmit) return;
 
     const total = config.questions.length;
     const idx = session.currentQuestion;
 
-    // Safety guard
+    // Safety guard (shouldn't happen, but keeps it stable)
     if (idx >= total) {
       session.waitingForSubmit = true;
-      await session.save();
+      await session.save().catch(() => {});
       return;
     }
 
@@ -69,7 +78,7 @@ export default {
     // Finished all questions -> show Submit button ONCE
     if (session.currentQuestion >= total) {
       session.waitingForSubmit = true;
-      await session.save();
+      await session.save().catch(() => {});
 
       const doneEmbed = new EmbedBuilder()
         .setColor("Green")
@@ -88,11 +97,10 @@ export default {
           .setStyle(ButtonStyle.Success)
       );
 
-      return message.author.send({ embeds: [doneEmbed], components: [row] });
+      return message.author.send({ embeds: [doneEmbed], components: [row] }).catch(() => {});
     }
 
-    // Send next question (stylish)
-    await session.save();
+    await session.save().catch(() => {});
 
     const nextQ = config.questions[session.currentQuestion];
 
@@ -111,6 +119,6 @@ export default {
       .setFooter({ text: "Reply in this DM with your answer." })
       .setTimestamp();
 
-    return message.author.send({ embeds: [embed] });
+    return message.author.send({ embeds: [embed] }).catch(() => {});
   }
 };
