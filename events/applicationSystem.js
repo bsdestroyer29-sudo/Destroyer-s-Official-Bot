@@ -78,7 +78,14 @@ export default {
         });
       }
 
-      // BLOCK only if already submitted and waiting review
+      // 🔥 AUTO CLEAN unfinished sessions (prevents ghost block)
+      await ApplicationSession.deleteMany({
+        guildId: interaction.guild.id,
+        userId: interaction.user.id,
+        submitted: false
+      });
+
+      // BLOCK if already submitted & waiting review
       const pending = await ApplicationSession.findOne({
         guildId: interaction.guild.id,
         userId: interaction.user.id,
@@ -92,13 +99,6 @@ export default {
           ephemeral: true
         });
       }
-
-      // DELETE any unfinished session (allow restart)
-      await ApplicationSession.deleteMany({
-        guildId: interaction.guild.id,
-        userId: interaction.user.id,
-        submitted: false
-      });
 
       await interaction.reply({
         content: "📩 Check your DMs.",
@@ -131,7 +131,7 @@ export default {
 
       if (!session) {
         return interaction.update({
-          content: "❌ This session no longer exists.",
+          content: "❌ Session not found.",
           components: []
         }).catch(() => {});
       }
@@ -151,7 +151,6 @@ export default {
         }).catch(() => {});
       }
 
-      // Mark as submitted BEFORE sending (anti-race)
       session.completed = true;
       session.submitted = true;
       session.reviewed = false;
