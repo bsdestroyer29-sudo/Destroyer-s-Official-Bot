@@ -31,7 +31,8 @@ export default {
     const existing = await ApplicationSession.findOne({
       userId: interaction.user.id,
       panelMessageId: config.panelMessageId,
-      completed: false
+      completed: false,
+      submitted: false
     });
 
     if (existing) {
