@@ -100,13 +100,6 @@ export default {
         completed: false
       });
 
-      if (active) {
-        return interaction.reply({
-          content: "❌ You already have an application in progress.",
-          ephemeral: true
-        });
-      }
-
       await interaction.reply({ content: "📩 Check your DMs.", ephemeral: true });
 
 await ApplicationSession.create({
