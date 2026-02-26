@@ -5,12 +5,9 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import { handleApplicationEntry } from "./helpers/applicationEntry.js";
-import { handleApplicationSubmit } from "./helpers/applicationSubmit.js";
-
 dotenv.config();
 
-// ===== PATH FIX FOR ES MODULES =====
+// ===== PATH FIX =====
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -144,65 +141,11 @@ async function connectMongo() {
 }
 
 // =================================================
-// ✅ INTERACTION HANDLER (BUTTONS + SLASH + CONTEXT)
-// =================================================
-client.on("interactionCreate", async (interaction) => {
-  try {
-    // ---- BUTTONS (prevents "thinking")
-    if (interaction.isButton()) {
-      console.log("🟦 BUTTON CLICK:", interaction.customId);
-
-      // Always ACK fast
-      await interaction.deferReply({ ephemeral: true }).catch(() => {});
-
-      // Entry
-      if (
-        interaction.customId === "application_entry" ||
-        interaction.customId.startsWith("application_entry") ||
-        interaction.customId.startsWith("app_entry") ||
-        interaction.customId.startsWith("entry")
-      ) {
-        return handleApplicationEntry(interaction);
-      }
-
-      // Submit
-      if (interaction.customId.startsWith("app_submit_")) {
-        return handleApplicationSubmit(interaction, client);
-      }
-
-      return interaction.editReply(`⚠️ Unknown button: \`${interaction.customId}\``).catch(() => {});
-    }
-
-    // ---- SLASH COMMANDS
-    if (interaction.isChatInputCommand()) {
-      const cmd = client.commands.get(interaction.commandName);
-      if (!cmd) return;
-      return await cmd.execute(interaction, client);
-    }
-
-    // ---- CONTEXT MENU
-    if (interaction.isContextMenuCommand()) {
-      const cmd = client.commands.get(interaction.commandName);
-      if (!cmd) return;
-      return await cmd.execute(interaction, client);
-    }
-  } catch (err) {
-    console.error("❌ interactionCreate error:", err);
-
-    if (interaction.deferred || interaction.replied) {
-      await interaction.followUp({ content: "❌ Error.", ephemeral: true }).catch(() => {});
-    } else {
-      await interaction.reply({ content: "❌ Error.", ephemeral: true }).catch(() => {});
-    }
-  }
-});
-
-// =================================================
 // READY
 // =================================================
 client.once("ready", () => {
   console.log(`🤖 Logged in as ${client.user.tag}`);
-  console.log("✅ BUILD: BUTTON FIX ACTIVE");
+  console.log("✅ BUILD: Events Router Active");
 });
 
 // =================================================
