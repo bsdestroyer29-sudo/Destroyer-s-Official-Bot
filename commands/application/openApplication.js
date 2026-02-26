@@ -17,29 +17,41 @@ export default {
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
 
   async execute(interaction) {
-
     await interaction.deferReply({ ephemeral: true });
 
     const targetMessage = interaction.targetMessage;
-
     if (!targetMessage) {
-      return interaction.editReply("❌ Could not find target message.");
+      return interaction.editReply("❌ Target message not found.");
     }
 
-    const config = await ApplicationConfig.findOne({
+    // Try new system first
+    let config = await ApplicationConfig.findOne({
       panelMessageId: targetMessage.id
     });
 
+    // Fallback for old configs (release-safe patch)
     if (!config) {
-      return interaction.editReply("❌ This message is not an application panel.");
+      config = await ApplicationConfig.findOne({
+        guildId: interaction.guild.id
+      });
+
+      if (config) {
+        config.panelMessageId = targetMessage.id;
+        config.panelChannelId = interaction.channel.id;
+        await config.save();
+      }
+    }
+
+    if (!config) {
+      return interaction.editReply("❌ Panel config not found.");
     }
 
     config.isOpen = true;
     await config.save();
 
     const embed = new EmbedBuilder()
-      .setColor("Blue")
-      .setTitle(config.title)
+      .setColor("#5865F2")
+      .setTitle(`🟢 ${config.title}`)
       .setDescription(config.description)
       .setFooter({ text: "Status: OPEN" });
 
