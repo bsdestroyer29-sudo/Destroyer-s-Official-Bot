@@ -21,7 +21,7 @@ const GUILD_ID = process.env.GUILD_ID;
 const MONGO_URI = process.env.MONGO_URI;
 
 // Optional (if you want submissions to go somewhere)
-const APPLICATION_REVIEW_CHANNEL_ID = process.env.APPLICATION_REVIEW_CHANNEL_ID || "";
+const APPLICATION_REVIEW_CHANNEL_ID = process.env.APPLICATION_REVIEW_CHANNEL_ID || "1475924505028333658";
 
 if (!TOKEN || !CLIENT_ID || !GUILD_ID || !MONGO_URI) {
   console.error("❌ Missing environment variables (TOKEN, CLIENT_ID, GUILD_ID, MONGO_URI).");
