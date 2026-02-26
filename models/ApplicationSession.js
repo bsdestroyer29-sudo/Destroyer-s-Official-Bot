@@ -5,7 +5,11 @@ const ApplicationSessionSchema = new mongoose.Schema({
   userId: String,
   panelMessageId: String,
 
-  currentQuestion: { type: Number, default: 0 },
+  currentQuestion: {
+    type: Number,
+    default: 0
+  },
+
   answers: [
     {
       question: String,
@@ -13,7 +17,20 @@ const ApplicationSessionSchema = new mongoose.Schema({
     }
   ],
 
-  completed: { type: Boolean, default: false }
+  completed: {
+    type: Boolean,
+    default: false
+  },
+
+  submitted: {
+    type: Boolean,
+    default: false
+  },
+
+  reviewed: {
+    type: Boolean,
+    default: false
+  }
 
 }, { timestamps: true });
 
