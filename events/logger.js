@@ -199,23 +199,64 @@ export default {
       );
     });
 
-    // =================================================
-    // ROLE / NICKNAME / TIMEOUT UPDATE
-    // =================================================
-    client.on("guildMemberUpdate", async (oldMember, newMember) => {
-      const logChannel = getLogChannel(client);
-      if (!logChannel) return;
+// =================================================
+// ROLE CHANGES (EMBED VERSION)
+// =================================================
+client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
-      const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
-      const removed = oldMember.roles.cache.filter(r => !newMember.roles.cache.has(r.id));
+  const logChannel = client.channels.cache.get("1475508584744747162");
+  if (!logChannel) return;
 
-      if (added.size || removed.size) {
-        logChannel.send(
-          `🎭 Role Update: ${newMember.user.tag}\n` +
-          `Added: ${added.map(r => r.name).join(", ") || "None"}\n` +
-          `Removed: ${removed.map(r => r.name).join(", ") || "None"}`
-        );
+  const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
+  const removed = oldMember.roles.cache.filter(r => !newMember.roles.cache.has(r.id));
+
+  if (!added.size && !removed.size) return;
+
+  let executor = "Unknown";
+
+  try {
+    const logs = await newMember.guild.fetchAuditLogs({
+      limit: 1,
+      type: 25 // MemberRoleUpdate
+    });
+
+    const entry = logs.entries.first();
+    if (entry && entry.target.id === newMember.id) {
+      executor = `${entry.executor.tag} (${entry.executor.id})`;
+    }
+
+  } catch {}
+
+  const embed = new EmbedBuilder()
+    .setColor("#5865F2")
+    .setTitle("🎭 Role Update")
+    .setDescription(`Member: <@${newMember.id}>`)
+    .addFields(
+      {
+        name: "➕ Added Roles",
+        value: added.size
+          ? added.map(r => `<@&${r.id}>`).join(", ")
+          : "None",
+        inline: false
+      },
+      {
+        name: "➖ Removed Roles",
+        value: removed.size
+          ? removed.map(r => `<@&${r.id}>`).join(", ")
+          : "None",
+        inline: false
+      },
+      {
+        name: "🛠 Updated By",
+        value: executor,
+        inline: false
       }
+    )
+    .setTimestamp();
+
+  logChannel.send({ embeds: [embed] });
+
+});
 
       if (oldMember.nickname !== newMember.nickname) {
         logChannel.send(
