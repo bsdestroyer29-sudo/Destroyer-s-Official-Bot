@@ -20,4 +20,16 @@ const ApplicationSessionSchema = new mongoose.Schema({
 
 }, { timestamps: true });
 
+// ✅ Unique index - database physically prevents duplicate active sessions
+ApplicationSessionSchema.index(
+  { userId: 1, panelMessageId: 1, submitted: 1, reviewed: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      submitted: false,
+      reviewed: false
+    }
+  }
+);
+
 export default mongoose.model("ApplicationSession", ApplicationSessionSchema);
