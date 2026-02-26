@@ -49,7 +49,6 @@ export default {
   once: false,
 
   async execute(interaction, client) {
-
     if (!interaction.isButton()) return;
 
     // ===============================
