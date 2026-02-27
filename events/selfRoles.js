@@ -1,9 +1,6 @@
 import SelfRoleConfig from "../models/SelfRoleConfig.js";
 
 export default {
-  name: "interactionCreate",
-  once: false,
-
   async execute(interaction, client) {
     // ===============================
     // DROPDOWN - ADD ROLES
@@ -19,7 +16,7 @@ export default {
         return interaction.editReply("❌ Self role config not found.");
       }
 
-      const member = interaction.member;
+      const member = await interaction.guild.members.fetch(interaction.user.id);
       const selectedRoleIds = interaction.values;
 
       const added = [];
@@ -34,7 +31,8 @@ export default {
           }
           await member.roles.add(roleId);
           added.push(roleId);
-        } catch {
+        } catch (err) {
+          console.error(`Failed to add role ${roleId}:`, err);
           failed.push(roleId);
         }
       }
@@ -61,7 +59,7 @@ export default {
         return interaction.editReply("❌ Self role config not found.");
       }
 
-      const member = interaction.member;
+      const member = await interaction.guild.members.fetch(interaction.user.id);
       const removed = [];
       const failed = [];
 
@@ -70,7 +68,8 @@ export default {
           if (!member.roles.cache.has(roleId)) continue;
           await member.roles.remove(roleId);
           removed.push(roleId);
-        } catch {
+        } catch (err) {
+          console.error(`Failed to remove role ${roleId}:`, err);
           failed.push(roleId);
         }
       }
