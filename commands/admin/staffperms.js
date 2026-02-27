@@ -25,9 +25,8 @@ export default {
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction, client) {
-    // ✅ Reply immediately so Discord doesn't time out
     await interaction.reply({
-      content: "⏳ Working on it... This may take a minute for large servers. I'll ping you when done.",
+      content: "⏳ Working on it... I'll ping you when done.",
       ephemeral: true
     });
 
@@ -53,32 +52,47 @@ export default {
     let failed = 0;
 
     for (const [, channel] of textChannels) {
-      for (const roleId of validRoles) {
-        try {
-          const existing = channel.permissionOverwrites.cache.get(roleId);
+      try {
+        // ✅ Build all overwrites for this channel in one go
+        const overwrites = [...channel.permissionOverwrites.cache.values()];
 
+        let channelNeedsUpdate = false;
+
+        for (const roleId of validRoles) {
+          const existing = channel.permissionOverwrites.cache.get(roleId);
           if (existing?.allow.has(PermissionFlagsBits.SendMessages)) {
             skipped++;
             continue;
           }
 
-          await channel.permissionOverwrites.edit(roleId, {
-            SendMessages: true,
-            ViewChannel: true
-          });
+          // Add or update the overwrite for this role
+          const existingIndex = overwrites.findIndex(o => o.id === roleId);
+          if (existingIndex >= 0) {
+            overwrites[existingIndex] = {
+              id: roleId,
+              allow: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.ViewChannel]
+            };
+          } else {
+            overwrites.push({
+              id: roleId,
+              allow: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.ViewChannel]
+            });
+          }
 
           updated++;
-
-          // ✅ Small delay to avoid Discord rate limits
-          await new Promise(r => setTimeout(r, 100));
-
-        } catch {
-          failed++;
+          channelNeedsUpdate = true;
         }
+
+        // ✅ One single API call per channel instead of 11
+        if (channelNeedsUpdate) {
+          await channel.permissionOverwrites.set(overwrites);
+        }
+
+      } catch {
+        failed += validRoles.length;
       }
     }
 
-    // ✅ Ping the user when done
     return interaction.editReply(
       [
         `✅ Done <@${interaction.user.id}>!`,
