@@ -194,6 +194,23 @@ client.on("interactionCreate", async interaction => {
     const { default: applicationSystem } = await import("./events/applicationSystem.js");
     return applicationSystem.execute(interaction, client);
   }
+
+  if (interaction.customId === "selfrole_remove") {
+    const { default: selfRoles } = await import("./events/selfRoles.js");
+    return selfRoles.execute(interaction, client);
+  }
+});
+
+// =================================================
+// SELECT MENU HANDLER
+// =================================================
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isStringSelectMenu()) return;
+
+  if (interaction.customId === "selfrole_select") {
+    const { default: selfRoles } = await import("./events/selfRoles.js");
+    return selfRoles.execute(interaction, client);
+  }
 });
 
 // =================================================
