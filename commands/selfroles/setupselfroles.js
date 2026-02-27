@@ -32,7 +32,7 @@ export default {
     )
     .addStringOption(o => o
       .setName("roles")
-      .setDescription("Roles in format: roleID:Label, roleID:Label (up to 15)")
+      .setDescription("Format: roleID:Label:emoji, roleID:Label (emoji optional, up to 15)")
       .setRequired(true)
     ),
 
@@ -44,11 +44,10 @@ export default {
     const channel = interaction.options.getChannel("channel");
     const rolesInput = interaction.options.getString("roles");
 
-    // Parse roles string
     const parsed = rolesInput.split(",").map(r => r.trim()).filter(Boolean);
 
     if (!parsed.length) {
-      return interaction.editReply("❌ No roles provided. Format: `roleID:Label, roleID:Label`");
+      return interaction.editReply("❌ No roles provided. Format: `roleID:Label:emoji, roleID:Label`");
     }
 
     if (parsed.length > 15) {
@@ -59,21 +58,23 @@ export default {
     const errors = [];
 
     for (const entry of parsed) {
-      const [roleId, ...labelParts] = entry.split(":");
-      const label = labelParts.join(":").trim();
+      const parts = entry.split(":");
+      const roleId = parts[0]?.trim();
+      const label = parts[1]?.trim();
+      const emoji = parts[2]?.trim() || null;
 
       if (!roleId || !label) {
-        errors.push(`❌ Invalid format: \`${entry}\` — use \`roleID:Label\``);
+        errors.push(`❌ Invalid format: \`${entry}\` — use \`roleID:Label\` or \`roleID:Label:emoji\``);
         continue;
       }
 
-      const role = interaction.guild.roles.cache.get(roleId.trim());
+      const role = interaction.guild.roles.cache.get(roleId);
       if (!role) {
-        errors.push(`❌ Role not found: \`${roleId.trim()}\``);
+        errors.push(`❌ Role not found: \`${roleId}\``);
         continue;
       }
 
-      roles.push({ roleId: role.id, label, description: null });
+      roles.push({ roleId: role.id, label, emoji });
     }
 
     if (errors.length) {
@@ -87,33 +88,36 @@ export default {
     // Build dropdown
     const selectMenu = new StringSelectMenuBuilder()
       .setCustomId("selfrole_select")
-      .setPlaceholder("Select roles to add...")
+      .setPlaceholder("🎭 Choose your roles...")
       .setMinValues(1)
       .setMaxValues(roles.length)
       .addOptions(
         roles.map(r => ({
           label: r.label,
-          value: r.roleId
+          value: r.roleId,
+          ...(r.emoji ? { emoji: r.emoji } : {})
         }))
       );
 
     const removeButton = new ButtonBuilder()
       .setCustomId("selfrole_remove")
       .setLabel("Remove All Roles")
-      .setStyle(ButtonStyle.Danger);
+      .setStyle(ButtonStyle.Danger)
+      .setEmoji("🗑️");
 
     const row1 = new ActionRowBuilder().addComponents(selectMenu);
     const row2 = new ActionRowBuilder().addComponents(removeButton);
 
     const embed = new EmbedBuilder()
-      .setColor("#5865F2")
+      .setColor("Red")
       .setTitle(title)
       .setDescription(description)
       .addFields({
-        name: "Available Roles",
-        value: roles.map(r => `<@&${r.roleId}> — ${r.label}`).join("\n")
+        name: "━━━━━━━━━━━━━━━━━━━━━━",
+        value: roles.map(r => `${r.emoji ? r.emoji : "🔴"} <@&${r.roleId}> — **${r.label}**`).join("\n"),
       })
-      .setFooter({ text: "Select roles from the dropdown below." })
+      .setImage("https://i.imgur.com/your-banner-here.png") // replace with your banner URL
+      .setFooter({ text: "Select roles from the dropdown • Remove all with the button below" })
       .setTimestamp();
 
     const msg = await channel.send({
@@ -130,6 +134,6 @@ export default {
       roles
     });
 
-    return interaction.editReply(`✅ Self roles panel created in ${channel}!\n\nTo add roles you used format: \`roleID:Label, roleID:Label\``);
+    return interaction.editReply(`✅ Self roles panel created in ${channel}!`);
   }
 };
