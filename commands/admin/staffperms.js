@@ -25,11 +25,14 @@ export default {
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction, client) {
-    await interaction.deferReply({ ephemeral: true });
+    // ✅ Reply immediately so Discord doesn't time out
+    await interaction.reply({
+      content: "⏳ Working on it... This may take a minute for large servers. I'll ping you when done.",
+      ephemeral: true
+    });
 
     const guild = interaction.guild;
 
-    // Get all text channels
     const textChannels = guild.channels.cache.filter(c =>
       c.type === ChannelType.GuildText ||
       c.type === ChannelType.GuildAnnouncement
@@ -39,7 +42,6 @@ export default {
       return interaction.editReply("❌ No text channels found.");
     }
 
-    // Filter to only roles that actually exist in this guild
     const validRoles = STAFF_ROLE_IDS.filter(id => guild.roles.cache.has(id));
 
     if (!validRoles.length) {
@@ -55,7 +57,6 @@ export default {
         try {
           const existing = channel.permissionOverwrites.cache.get(roleId);
 
-          // ✅ Skip if role already has SendMessages explicitly allowed
           if (existing?.allow.has(PermissionFlagsBits.SendMessages)) {
             skipped++;
             continue;
@@ -67,15 +68,20 @@ export default {
           });
 
           updated++;
+
+          // ✅ Small delay to avoid Discord rate limits
+          await new Promise(r => setTimeout(r, 100));
+
         } catch {
           failed++;
         }
       }
     }
 
+    // ✅ Ping the user when done
     return interaction.editReply(
       [
-        `✅ Done!`,
+        `✅ Done <@${interaction.user.id}>!`,
         `📝 Updated: **${updated}** permissions`,
         `⏭️ Skipped (already set): **${skipped}**`,
         `❌ Failed: **${failed}**`
