@@ -11,11 +11,11 @@ const MAX_COUNT = 1000000;
 
 export default {
   data: new SlashCommandBuilder()
-    .setName("add")
+    .setName("counting")
     .setDescription("Counting commands.")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand(sub => sub
-      .setName("counting")
+      .setName("add")
       .setDescription("Manually set the current count.")
       .addIntegerOption(o => o
         .setName("number")
@@ -29,7 +29,7 @@ export default {
   async execute(interaction, client) {
     const sub = interaction.options.getSubcommand();
 
-    if (sub === "counting") {
+    if (sub === "add") {
       await interaction.deferReply({ ephemeral: true });
 
       const number = interaction.options.getInteger("number");
