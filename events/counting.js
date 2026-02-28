@@ -2,6 +2,7 @@ import { EmbedBuilder } from "discord.js";
 import CountingState from "../models/CountingState.js";
 
 const COUNTING_CHANNEL_ID = "1477190655682805864";
+const MAX_COUNT = 1000000;
 
 export default {
   name: "messageCreate",
@@ -13,12 +14,10 @@ export default {
 
     const number = parseInt(message.content.trim());
 
-    // Ignore non-number messages
     if (isNaN(number)) return;
 
     const guildId = message.guild.id;
 
-    // Get or create counting state
     let state = await CountingState.findOne({ guildId });
     if (!state) {
       state = await CountingState.create({
@@ -83,22 +82,42 @@ export default {
     state.currentCount = number;
     state.lastUserId = message.author.id;
 
-    // Update highest count if beaten
     if (number > state.highestCount) {
       state.highestCount = number;
     }
 
     await state.save();
 
-    // React with checkmark
     await message.react("✅").catch(() => {});
 
-    // Milestone messages at round numbers
+    // ✅ WIN: reached 1 million
+    if (number === MAX_COUNT) {
+      const winEmbed = new EmbedBuilder()
+        .setColor("Gold")
+        .setTitle("🏆 YOU DID IT!")
+        .setDescription(
+          `**INCREDIBLE!** This server counted all the way to **1,000,000**!\n\n` +
+          `The count has been reset. Can you do it again? 👀`
+        )
+        .setFooter({ text: "Legendary achievement unlocked!" })
+        .setTimestamp();
+
+      state.currentCount = 0;
+      state.lastUserId = null;
+      await state.save();
+
+      return message.channel.send({ embeds: [winEmbed] });
+    }
+
+    // Milestone messages every 100
     if (number % 100 === 0) {
       const milestoneEmbed = new EmbedBuilder()
         .setColor("Gold")
         .setTitle("🎉 Milestone Reached!")
-        .setDescription(`Amazing! You reached **${number}**! Keep going!`)
+        .setDescription(
+          `Amazing! You reached **${number.toLocaleString()}** / **1,000,000**!\n` +
+          `**${(MAX_COUNT - number).toLocaleString()}** to go!`
+        )
         .setTimestamp();
 
       await message.channel.send({ embeds: [milestoneEmbed] });
